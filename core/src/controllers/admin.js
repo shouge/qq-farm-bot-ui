@@ -583,6 +583,36 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    app.post('/api/farm/land/operate', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const action = String(body.action || '').trim().toLowerCase();
+            const landId = Number(body.landId);
+            const seedId = Number(body.seedId);
+
+            if (!action) {
+                return res.status(400).json({ ok: false, error: 'Missing action' });
+            }
+            if (!Number.isFinite(landId) || landId <= 0) {
+                return res.status(400).json({ ok: false, error: 'Invalid landId' });
+            }
+            if (action === 'plant' && (!Number.isFinite(seedId) || seedId <= 0)) {
+                return res.status(400).json({ ok: false, error: 'Invalid seedId' });
+            }
+
+            const data = await provider.doSingleLandOp(id, {
+                action,
+                landId,
+                seedId: Number.isFinite(seedId) ? seedId : 0,
+            });
+            return res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
     // API: 数据分析
     app.get('/api/analytics', async (req, res) => {
         try {
