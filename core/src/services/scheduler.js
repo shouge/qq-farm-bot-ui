@@ -41,13 +41,15 @@ class TimerNode {
 
 /**
  * 时间轮 - 用于高效调度大量定时任务
- * 时间复杂度: 添加/删除 O(1), 执行 O(1)
+ * 时间复杂度: 添加 O(1), 删除 O(1), 查找 O(1), 执行 O(1)
  */
 class TimeWheel {
     constructor(size) {
         this.size = size;
         this.buckets = Array.from({ length: size }, () => []);
         this.currentIndex = 0;
+        // Map 索引: taskName -> { bucketIndex, node }，实现 O(1) 查找
+        this.taskIndex = new Map();
     }
 
     /**
@@ -64,6 +66,8 @@ class TimeWheel {
     add(node) {
         const index = this.calculateIndex(node.executeAt);
         this.buckets[index].push(node);
+        // 更新索引
+        this.taskIndex.set(node.taskName, { bucketIndex: index, node });
     }
 
     /**
@@ -72,6 +76,10 @@ class TimeWheel {
     getCurrentTasks() {
         const tasks = this.buckets[this.currentIndex];
         this.buckets[this.currentIndex] = [];
+        // 从索引中移除这些任务
+        for (const node of tasks) {
+            this.taskIndex.delete(node.taskName);
+        }
         return tasks;
     }
 
@@ -86,46 +94,39 @@ class TimeWheel {
      * 获取等待执行的任务数
      */
     getPendingCount() {
-        return this.buckets.reduce((sum, bucket) => sum + bucket.length, 0);
+        return this.taskIndex.size;
     }
 
     /**
-     * 查找并移除指定任务
+     * 查找并移除指定任务 - O(1)
      */
     remove(taskName) {
-        for (const bucket of this.buckets) {
-            const index = bucket.findIndex(n => n.taskName === taskName);
-            if (index !== -1) {
-                bucket.splice(index, 1);
-                return true;
-            }
+        const entry = this.taskIndex.get(taskName);
+        if (!entry) return false;
+
+        const { bucketIndex, node } = entry;
+        const bucket = this.buckets[bucketIndex];
+        const index = bucket.indexOf(node);
+
+        if (index !== -1) {
+            bucket.splice(index, 1);
         }
-        return false;
+        this.taskIndex.delete(taskName);
+        return true;
     }
 
     /**
-     * 检查任务是否存在
+     * 检查任务是否存在 - O(1)
      */
     has(taskName) {
-        for (const bucket of this.buckets) {
-            if (bucket.some(n => n.taskName === taskName)) {
-                return true;
-            }
-        }
-        return false;
+        return this.taskIndex.has(taskName);
     }
 
     /**
-     * 获取所有任务名称
+     * 获取所有任务名称 - O(n)
      */
     getTaskNames() {
-        const names = [];
-        for (const bucket of this.buckets) {
-            for (const node of bucket) {
-                names.push(node.taskName);
-            }
-        }
-        return names;
+        return Array.from(this.taskIndex.keys());
     }
 
     /**
@@ -135,6 +136,7 @@ class TimeWheel {
         for (let i = 0; i < this.size; i++) {
             this.buckets[i] = [];
         }
+        this.taskIndex.clear();
     }
 }
 
@@ -439,7 +441,7 @@ class Scheduler {
     }
 
     /**
-     * 获取调度器快照
+     * 获取调度器快照 - O(n)，但只遍历实际任务
      * @returns {Object}
      */
     getSnapshot() {
@@ -459,20 +461,18 @@ class Scheduler {
             }));
         }
 
-        // 收集时间轮中的任务
-        for (const bucket of this.timeWheel.buckets) {
-            for (const node of bucket) {
-                tasks.push(normalizeTaskSnapshot(node.taskName, {
-                    kind: node.kind,
-                    delayMs: node.delayMs,
-                    createdAt: node.createdAt,
-                    nextRunAt: node.executeAt,
-                    lastRunAt: node.lastRunAt,
-                    runCount: node.runCount,
-                    running: node.running,
-                    preventOverlap: node.options.preventOverlap,
-                }));
-            }
+        // 收集时间轮中的任务 - 直接遍历索引，避免扫描空 bucket
+        for (const [name, { node }] of this.timeWheel.taskIndex.entries()) {
+            tasks.push(normalizeTaskSnapshot(name, {
+                kind: node.kind,
+                delayMs: node.delayMs,
+                createdAt: node.createdAt,
+                nextRunAt: node.executeAt,
+                lastRunAt: node.lastRunAt,
+                runCount: node.runCount,
+                running: node.running,
+                preventOverlap: node.options.preventOverlap,
+            }));
         }
 
         tasks.sort((a, b) => a.name.localeCompare(b.name));
