@@ -29,6 +29,15 @@ function createRuntimeState(options) {
     let configRevision = Date.now();
     const runtimeLogger = createModuleLogger('runtime');
 
+    // 预置默认 operations 模板（冻结，避免意外修改）
+    const defaultOpsTemplate = {};
+    for (const k of operationKeys) defaultOpsTemplate[k] = 0;
+    Object.freeze(defaultOpsTemplate);
+
+    // operations 对象池（限制大小，避免内存无限增长）
+    const opsPool = [];
+    const MAX_OPS_POOL_SIZE = 10;
+
     function nextConfigRevision() {
         configRevision += 1;
         return configRevision;
@@ -84,26 +93,58 @@ function createRuntimeState(options) {
 
     function normalizeStatusForPanel(data, accountId, accountName) {
         const src = (data && typeof data === 'object') ? data : {};
-        const ops = (src.operations && typeof src.operations === 'object') ? { ...src.operations } : {};
-        for (const k of operationKeys) {
-            if (ops[k] === undefined || ops[k] === null || Number.isNaN(Number(ops[k]))) {
-                ops[k] = 0;
-            } else {
-                ops[k] = Number(ops[k]);
+        const srcOps = src.operations;
+
+        // 快速路径：operations 已存在且所有 key 都合法
+        if (srcOps && typeof srcOps === 'object') {
+            let needsFix = false;
+            for (const k of operationKeys) {
+                const v = srcOps[k];
+                if (v === undefined || v === null || Number.isNaN(Number(v))) {
+                    needsFix = true;
+                    break;
+                }
+            }
+            // 如果不需要修复，直接复用原对象（避免创建新对象）
+            if (!needsFix) {
+                return {
+                    ...src,
+                    accountId,
+                    accountName,
+                    operations: srcOps,
+                };
             }
         }
-        return {
+
+        // 慢速路径：需要创建新 operations 对象
+        // 尝试从对象池获取
+        let ops = opsPool.pop() || {};
+        // 重置对象
+        for (const k of operationKeys) ops[k] = 0;
+
+        // 合并原始值
+        if (srcOps && typeof srcOps === 'object') {
+            for (const k of operationKeys) {
+                const v = srcOps[k];
+                if (v !== undefined && v !== null && !Number.isNaN(Number(v))) {
+                    ops[k] = Number(v);
+                }
+            }
+        }
+
+        const result = {
             ...src,
             accountId,
             accountName,
             operations: ops,
         };
+
+        return result;
     }
 
     function buildDefaultOperations() {
-        const ops = {};
-        for (const k of operationKeys) ops[k] = 0;
-        return ops;
+        // 返回模板的浅拷贝（避免外部修改影响模板）
+        return { ...defaultOpsTemplate };
     }
 
     function buildDefaultStatus(accountId) {

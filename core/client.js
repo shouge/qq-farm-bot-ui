@@ -12,6 +12,7 @@ const {
 } = require('./src/controllers/admin');
 const { createRuntimeEngine } = require('./src/runtime/runtime-engine');
 const { createModuleLogger } = require('./src/services/logger');
+const { enableHotReload } = require('./src/config/gameConfig');
 const mainLogger = createModuleLogger('main');
 
 // 打包后 worker 由当前可执行文件以 --worker 模式启动
@@ -40,4 +41,9 @@ if (isWorkerProcess) {
     }).catch((err) => {
         mainLogger.error('runtime bootstrap failed', { error: err && err.message ? err.message : String(err) });
     });
+
+    // 启用游戏配置热重载（开发环境）
+    if (process.env.NODE_ENV === 'development' || process.env.FARM_HOT_RELOAD === '1') {
+        enableHotReload(true);
+    }
 }

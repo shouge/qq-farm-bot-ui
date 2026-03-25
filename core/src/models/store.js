@@ -7,6 +7,11 @@ const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
 const { CONFIG: BASE_CONFIG } = require('../config/config');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
 
+// 批量写入配置
+const SAVE_DEBOUNCE_MS = 500; // 500ms内多次变更合并为一次写入
+let saveTimer = null;
+let pendingSave = false;
+
 const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
 const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
@@ -50,7 +55,67 @@ const DEFAULT_RUNTIME_CLIENT = {
         device_id: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.device_id) ? BASE_CONFIG.device_info.device_id : 'iPhone X<iPhone18,3>',
     },
 };
-// ============ 全局配置 ============
+// ============ LRU 缓存实现 ============
+class LRUCache {
+    constructor(maxSize = 500) {
+        this.maxSize = maxSize;
+        this.cache = new Map();
+    }
+
+    get(key) {
+        if (!this.cache.has(key)) return undefined;
+        // 移动到末尾（最近访问）
+        const value = this.cache.get(key);
+        this.cache.delete(key);
+        this.cache.set(key, value);
+        return value;
+    }
+
+    set(key, value) {
+        if (this.cache.has(key)) {
+            this.cache.delete(key);
+        } else if (this.cache.size >= this.maxSize) {
+            // 淘汰最久未访问的（第一个）
+            const firstKey = this.cache.keys().next().value;
+            this.cache.delete(firstKey);
+        }
+        this.cache.set(key, value);
+    }
+
+    has(key) {
+        return this.cache.has(key);
+    }
+
+    delete(key) {
+        return this.cache.delete(key);
+    }
+
+    size() {
+        return this.cache.size;
+    }
+
+    clear() {
+        this.cache.clear();
+    }
+
+    // 获取所有值（按访问顺序）
+    values() {
+        return Array.from(this.cache.values());
+    }
+
+    // 批量设置（保留访问顺序）
+    setAll(entries) {
+        this.cache.clear();
+        for (const entry of entries) {
+            if (entry && entry.gid) {
+                this.cache.set(entry.gid, entry);
+            }
+        }
+    }
+}
+
+// 好友 LRU 缓存实例（限制 500 个）
+const friendLRUCache = new LRUCache(500);
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
         farm: true,
@@ -375,6 +440,7 @@ function normalizeFriendCache(input) {
             gid,
             nick: String(item.nick || '').trim() || `GID:${gid}`,
             avatarUrl: String(item.avatarUrl || '').trim(),
+            lastAccessed: item.lastAccessed || Date.now(),
         });
     }
     return normalized;
@@ -646,23 +712,66 @@ function sanitizeGlobalConfigBeforeSave() {
     };
 }
 
-// 保存全局配置
-function saveGlobalConfig() {
+// 保存全局配置（批量写入优化）
+// 立即同步保存（用于进程退出时）
+function flushGlobalConfigSync() {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    if (!pendingSave) return;
+    pendingSave = false;
+
     ensureDataDir();
     try {
-        const oldJson = readTextFile(STORE_FILE, '');
-
         sanitizeGlobalConfigBeforeSave();
-        const newJson = JSON.stringify(globalConfig, null, 2);
-        
-        if (oldJson !== newJson) {
-            console.warn('[系统] 正在保存配置到:', STORE_FILE);
-            writeJsonFileAtomic(STORE_FILE, globalConfig);
-        }
+        writeJsonFileAtomic(STORE_FILE, globalConfig);
+        console.warn('[系统] 配置已同步保存');
     } catch (e) {
-        console.error('保存配置失败:', e.message);
+        console.error('同步保存配置失败:', e.message);
     }
 }
+
+// 保存全局配置（批量写入优化）
+function saveGlobalConfig() {
+    pendingSave = true;
+
+    if (saveTimer) {
+        return; // 已在等待写入，新变更会合并
+    }
+
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        if (!pendingSave) return;
+        pendingSave = false;
+
+        ensureDataDir();
+        try {
+            const oldJson = readTextFile(STORE_FILE, '');
+
+            sanitizeGlobalConfigBeforeSave();
+            const newJson = JSON.stringify(globalConfig, null, 2);
+
+            if (oldJson !== newJson) {
+                console.warn('[系统] 正在保存配置到:', STORE_FILE);
+                writeJsonFileAtomic(STORE_FILE, globalConfig);
+            }
+        } catch (e) {
+            console.error('保存配置失败:', e.message);
+        }
+    }, SAVE_DEBOUNCE_MS);
+}
+
+// 进程退出时同步刷新配置
+process.on('exit', flushGlobalConfigSync);
+process.on('SIGINT', () => {
+    flushGlobalConfigSync();
+    process.exit(0);
+});
+process.on('SIGTERM', () => {
+    flushGlobalConfigSync();
+    process.exit(0);
+});
 
 function getAdminPasswordHash() {
     return String(globalConfig.adminPasswordHash || '');
@@ -899,23 +1008,71 @@ function setFriendBlacklist(accountId, list) {
 }
 
 function getFriendCache(accountId) {
-    return normalizeFriendCache(getAccountConfigSnapshot(accountId).friendCache);
+    const id = resolveAccountId(accountId);
+    if (!id) return [];
+
+    // 从配置中加载到 LRU 缓存（如果缓存为空）
+    if (friendLRUCache.size() === 0) {
+        const cfg = getAccountConfigSnapshot(id);
+        const friends = normalizeFriendCache(cfg.friendCache);
+        for (const f of friends) {
+            friendLRUCache.set(f.gid, f);
+        }
+    }
+
+    // 标记访问时间并返回
+    const friends = friendLRUCache.values();
+    const now = Date.now();
+    for (const f of friends) {
+        f.lastAccessed = now;
+    }
+    return friends;
 }
 
 function setFriendCache(accountId, list) {
-    const current = getAccountConfigSnapshot(accountId);
+    const id = resolveAccountId(accountId);
+    if (!id) return [];
+
+    friendLRUCache.clear();
+    const normalized = normalizeFriendCache(list);
+    const now = Date.now();
+    for (const f of normalized) {
+        f.lastAccessed = now;
+        friendLRUCache.set(f.gid, f);
+    }
+
+    // 保存到配置（只保留最多 500 个）
+    const toSave = friendLRUCache.values();
+    const current = getAccountConfigSnapshot(id);
     const next = normalizeAccountConfig(current, accountFallbackConfig);
-    next.friendCache = normalizeFriendCache(list);
-    setAccountConfigSnapshot(accountId, next);
-    return [...next.friendCache];
+    next.friendCache = toSave;
+    setAccountConfigSnapshot(id, next);
+    return toSave;
 }
 
 function updateFriendCache(accountId, newItems) {
-    const current = getAccountConfigSnapshot(accountId);
+    const id = resolveAccountId(accountId);
+    if (!id) return [];
+
+    // 确保 LRU 缓存已加载
+    if (friendLRUCache.size() === 0) {
+        getFriendCache(id);
+    }
+
+    const now = Date.now();
+    const toAdd = normalizeFriendCache(newItems);
+    for (const item of toAdd) {
+        item.lastAccessed = now;
+        friendLRUCache.set(item.gid, item);
+    }
+
+    // 保存到配置
+    const toSave = friendLRUCache.values();
+    const current = getAccountConfigSnapshot(id);
     const next = normalizeAccountConfig(current, accountFallbackConfig);
-    next.friendCache = mergeFriendCache(next.friendCache, newItems);
-    setAccountConfigSnapshot(accountId, next);
-    return [...next.friendCache];
+    next.friendCache = toSave;
+    setAccountConfigSnapshot(id, next);
+    return toSave;
 }
 
 function getUI() {

@@ -55,36 +55,85 @@ class TokenBucket {
     }
 }
 
-// 优先级队列
+// 二叉堆优先级队列 (O(log n) 插入/删除)
 class PriorityQueue {
     constructor() {
-        this.queue = [];
+        this.heap = [];
+    }
+
+    // 获取父节点索引
+    _parent(i) { return Math.floor((i - 1) / 2); }
+    // 获取左子节点索引
+    _left(i) { return 2 * i + 1; }
+    // 获取右子节点索引
+    _right(i) { return 2 * i + 2; }
+
+    // 交换节点
+    _swap(i, j) {
+        [this.heap[i], this.heap[j]] = [this.heap[j], this.heap[i]];
+    }
+
+    // 上浮调整
+    _heapifyUp(i) {
+        while (i > 0) {
+            const parent = this._parent(i);
+            // 优先级高的在前 (大顶堆)
+            if (this.heap[parent].priority < this.heap[i].priority) {
+                this._swap(parent, i);
+                i = parent;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // 下沉调整
+    _heapifyDown(i) {
+        const n = this.heap.length;
+        while (true) {
+            let largest = i;
+            const left = this._left(i);
+            const right = this._right(i);
+
+            if (left < n && this.heap[left].priority > this.heap[largest].priority) {
+                largest = left;
+            }
+            if (right < n && this.heap[right].priority > this.heap[largest].priority) {
+                largest = right;
+            }
+
+            if (largest === i) break;
+            this._swap(i, largest);
+            i = largest;
+        }
     }
 
     enqueue(item, priority = 0) {
         const entry = { item, priority, addedAt: Date.now() };
-        const index = this.queue.findIndex(e => e.priority < priority);
-        if (index === -1) {
-            this.queue.push(entry);
-        } else {
-            this.queue.splice(index, 0, entry);
-        }
+        this.heap.push(entry);
+        this._heapifyUp(this.heap.length - 1);
     }
 
     dequeue() {
-        return this.queue.shift()?.item;
+        if (this.heap.length === 0) return undefined;
+        if (this.heap.length === 1) return this.heap.pop().item;
+
+        const max = this.heap[0];
+        this.heap[0] = this.heap.pop();
+        this._heapifyDown(0);
+        return max.item;
     }
 
     peek() {
-        return this.queue[0]?.item;
+        return this.heap[0]?.item;
     }
 
     size() {
-        return this.queue.length;
+        return this.heap.length;
     }
 
     clear() {
-        this.queue = [];
+        this.heap = [];
     }
 }
 

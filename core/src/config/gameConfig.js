@@ -22,6 +22,98 @@ const seedItemMap = new Map();  // seed_id -> item(type=5)
 const seedImageMap = new Map(); // seed_id -> image url
 const seedAssetImageMap = new Map(); // asset_name (Crop_xxx) -> image url
 
+// ============ 热重载相关 ============
+let configWatcher = null;
+let watcherCallbacks = new Set();
+const CONFIG_FILES = ['RoleLevel.json', 'Plant.json', 'ItemInfo.json'];
+
+/**
+ * 监听配置变更回调
+ * @param {Function} callback - 配置重载后的回调函数
+ * @returns {Function} 取消监听的函数
+ */
+function onConfigReload(callback) {
+    watcherCallbacks.add(callback);
+    return () => watcherCallbacks.delete(callback);
+}
+
+/**
+ * 触发配置重载回调
+ */
+function emitConfigReload() {
+    for (const cb of watcherCallbacks) {
+        try { cb(); } catch { /* ignore */ }
+    }
+}
+
+/**
+ * 启动配置文件热重载监听（开发环境使用）
+ * @param {boolean} enabled - 是否启用
+ */
+function enableHotReload(enabled = true) {
+    if (!enabled) {
+        if (configWatcher) {
+            configWatcher.close();
+            configWatcher = null;
+            console.warn('[配置] 已停止热重载监听');
+        }
+        return;
+    }
+
+    if (configWatcher) return; // 已启用
+
+    const configDir = getResourcePath('gameConfig');
+    if (!fs.existsSync(configDir)) {
+        console.warn('[配置] 配置目录不存在，无法启用热重载');
+        return;
+    }
+
+    try {
+        configWatcher = fs.watch(configDir, { recursive: true }, (eventType, filename) => {
+            if (!filename) return;
+            // 只监听关心的配置文件
+            const isTargetFile = CONFIG_FILES.some(name => filename.includes(name)) ||
+                                 filename.includes('seed_images_named');
+            if (!isTargetFile) return;
+
+            // 防抖：500ms内多次变更只重载一次
+            if (configWatcher._reloadTimer) {
+                clearTimeout(configWatcher._reloadTimer);
+            }
+            configWatcher._reloadTimer = setTimeout(() => {
+                configWatcher._reloadTimer = null;
+                console.warn(`[配置] 检测到 ${filename} 变更，正在热重载...`);
+                const oldPlantCount = plantMap.size;
+                const oldItemCount = itemInfoMap.size;
+
+                loadConfigs();
+
+                console.warn(`[配置] 热重载完成: 植物 ${oldPlantCount}->${plantMap.size}, 物品 ${oldItemCount}->${itemInfoMap.size}`);
+                emitConfigReload();
+            }, 500);
+        });
+        console.warn('[配置] 已启用热重载监听');
+    } catch (e) {
+        console.warn('[配置] 启用热重载失败:', e.message);
+    }
+}
+
+/**
+ * 手动触发配置重载
+ */
+function reloadConfigs() {
+    console.warn('[配置] 手动触发配置重载...');
+    loadConfigs();
+    emitConfigReload();
+    console.warn('[配置] 重载完成');
+    return {
+        plants: plantMap.size,
+        items: itemInfoMap.size,
+        roleLevels: roleLevelConfig?.length || 0,
+        seedImages: seedImageMap.size,
+    };
+}
+
 /**
  * 加载配置文件
  */
@@ -341,6 +433,9 @@ loadConfigs();
 
 module.exports = {
     loadConfigs,
+    reloadConfigs,
+    enableHotReload,
+    onConfigReload,
     getAllPlants,
     getAllSeeds,
     // 等级经验

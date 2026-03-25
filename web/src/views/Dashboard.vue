@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useIntervalFn } from '@vueuse/core'
+import { useIntervalFn, useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
@@ -41,6 +41,12 @@ const allLogs = computed(() => {
   }))
 
   return [...sLogs, ...aLogs].sort((a: any, b: any) => b.ts - a.ts).filter((l: any) => !l.isAccountLog)
+})
+
+// 虚拟滚动
+const { list: virtualLogs, containerProps, wrapperProps, scrollTo } = useVirtualList(allLogs, {
+  itemHeight: 28, // 每行大约28px
+  overscan: 5,    // 预渲染5行
 })
 
 const filter = reactive({
@@ -436,11 +442,11 @@ function onLogScroll(e: Event) {
   autoScroll.value = isNearTop
 }
 
-// Auto scroll logs
+// Auto scroll logs - 使用虚拟滚动的 scrollTo
 watch(allLogs, () => {
   nextTick(() => {
-    if (logContainer.value && autoScroll.value) {
-      logContainer.value.scrollTop = 0
+    if (autoScroll.value) {
+      scrollTo(0)
     }
   })
 }, { deep: true })
@@ -664,15 +670,17 @@ useIntervalFn(updateCountdowns, 1000)
             </div>
           </div>
 
-          <div ref="logContainer" class="max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded bg-gray-50 p-4 text-sm leading-relaxed md:max-h-none dark:bg-gray-900" @scroll="onLogScroll">
+          <div ref="logContainer" class="max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded bg-gray-50 p-4 text-sm leading-relaxed md:max-h-none dark:bg-gray-900" v-bind="containerProps" @scroll="onLogScroll">
             <div v-if="!allLogs.length" class="py-8 text-center text-gray-400">
               暂无日志
             </div>
-            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all">
-              <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
-              <span class="mr-2 rounded px-1.5 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
-              <span v-if="log.meta?.event" class="mr-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-500 dark:bg-blue-900/20 dark:text-blue-400">{{ getEventLabel(log.meta.event) }}</span>
-              <span :class="getLogMsgClass(log.tag)">{{ log.msg }}</span>
+            <div v-else v-bind="wrapperProps">
+              <div v-for="{ index, data: log } in virtualLogs" :key="log.ts + log.msg + index" class="mb-1 break-all">
+                <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
+                <span class="mr-2 rounded px-1.5 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
+                <span v-if="log.meta?.event" class="mr-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-500 dark:bg-blue-900/20 dark:text-blue-400">{{ getEventLabel(log.meta.event) }}</span>
+                <span :class="getLogMsgClass(log.tag)">{{ log.msg }}</span>
+              </div>
             </div>
           </div>
         </div>

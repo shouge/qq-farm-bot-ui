@@ -6,7 +6,7 @@ const { ensureDataDir } = require('../config/runtime-paths');
 let winston = null;
 try {
     // 可选依赖：未安装时回退到 console，避免运行中断
-     
+
     winston = require('winston');
 } catch {
     winston = null;
@@ -50,9 +50,94 @@ function ensureFallbackLogDir() {
     return fallbackLogDir;
 }
 
-function appendFallbackLog(level, moduleName, message, meta) {
+// 异步日志写入队列配置
+const LOG_FLUSH_INTERVAL_MS = 100; // 100ms 刷新一次
+const LOG_MAX_BUFFER_SIZE = 100;   // 最多缓冲100条
+
+let logBuffer = [];
+let flushTimer = null;
+let isFlushing = false;
+
+/**
+ * 刷新日志缓冲区到文件
+ */
+async function flushLogBuffer() {
+    if (isFlushing || logBuffer.length === 0) return;
+    isFlushing = true;
+
+    const logsToWrite = logBuffer.splice(0, logBuffer.length);
+
     try {
         const dir = ensureFallbackLogDir();
+        const combinedLines = [];
+        const errorLines = [];
+
+        for (const { level, line } of logsToWrite) {
+            combinedLines.push(line);
+            if (level === 'error') {
+                errorLines.push(line);
+            }
+        }
+
+        // 批量异步写入
+        const writePromises = [
+            fs.promises.appendFile(path.join(dir, 'combined.log'), combinedLines.join(''), 'utf8'),
+        ];
+        if (errorLines.length > 0) {
+            writePromises.push(fs.promises.appendFile(path.join(dir, 'error.log'), errorLines.join(''), 'utf8'));
+        }
+
+        await Promise.all(writePromises);
+    } catch {
+        // ignore file write errors in fallback mode
+    } finally {
+        isFlushing = false;
+        // 如果缓冲区内还有数据，继续刷新
+        if (logBuffer.length > 0) {
+            scheduleFlush();
+        }
+    }
+}
+
+/**
+ * 调度刷新
+ */
+function scheduleFlush() {
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => {
+        flushTimer = null;
+        flushLogBuffer();
+    }, LOG_FLUSH_INTERVAL_MS);
+}
+
+/**
+ * 立即刷新（用于进程退出时）
+ */
+async function flushImmediate() {
+    if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+    }
+    await flushLogBuffer();
+}
+
+/**
+ * 添加日志到缓冲区
+ */
+function enqueueLog(level, line) {
+    logBuffer.push({ level, line });
+    if (logBuffer.length >= LOG_MAX_BUFFER_SIZE) {
+        flushLogBuffer();
+    } else {
+        scheduleFlush();
+    }
+}
+
+/**
+ * 异步写入回退日志
+ */
+function appendFallbackLog(level, moduleName, message, meta) {
+    try {
         const payload = {
             ts: new Date().toISOString(),
             level,
@@ -61,14 +146,39 @@ function appendFallbackLog(level, moduleName, message, meta) {
             meta: sanitizeMeta(meta || {}),
         };
         const line = `${JSON.stringify(payload)}\n`;
-        fs.appendFileSync(path.join(dir, 'combined.log'), line, 'utf8');
-        if (level === 'error') {
-            fs.appendFileSync(path.join(dir, 'error.log'), line, 'utf8');
-        }
+        enqueueLog(level, line);
     } catch {
         // ignore file write errors in fallback mode
     }
 }
+
+// 进程退出时刷新日志
+process.on('exit', () => {
+    // 同步刷新剩余日志
+    if (logBuffer.length > 0) {
+        try {
+            const dir = ensureFallbackLogDir();
+            for (const { level, line } of logBuffer) {
+                fs.appendFileSync(path.join(dir, 'combined.log'), line, 'utf8');
+                if (level === 'error') {
+                    fs.appendFileSync(path.join(dir, 'error.log'), line, 'utf8');
+                }
+            }
+        } catch {
+            // ignore
+        }
+    }
+});
+
+process.on('SIGINT', async () => {
+    await flushImmediate();
+    process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+    await flushImmediate();
+    process.exit(0);
+});
 
 function createConsoleFallback(moduleName) {
     const write = (level, message, meta) => {
