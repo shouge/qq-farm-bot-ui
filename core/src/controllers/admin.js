@@ -915,6 +915,7 @@ function startAdminServer(dataProvider) {
     app.get('/api/logs', (req, res) => {
         const queryAccountIdRaw = (req.query.accountId || '').toString().trim();
         const id = queryAccountIdRaw ? (queryAccountIdRaw === 'all' ? '' : resolveAccId(queryAccountIdRaw)) : getAccId(req);
+        const enablePagination = !!(req.query.before || req.query.after);
         const options = {
             limit: Number.parseInt(req.query.limit) || 100,
             tag: req.query.tag || '',
@@ -924,9 +925,23 @@ function startAdminServer(dataProvider) {
             isWarn: req.query.isWarn,
             timeFrom: req.query.timeFrom || '',
             timeTo: req.query.timeTo || '',
+            before: req.query.before ? Number(req.query.before) : null,
+            after: req.query.after ? Number(req.query.after) : null,
+            enablePagination,
         };
-        const list = provider.getLogs(id, options);
-        res.json({ ok: true, data: list });
+        const result = provider.getLogs(id, options);
+
+        // 兼容旧格式和新分页格式
+        if (enablePagination && result && typeof result === 'object' && !Array.isArray(result)) {
+            res.json({
+                ok: true,
+                data: result.data || [],
+                hasMore: !!result.hasMore,
+                nextCursor: result.nextCursor || null,
+            });
+        } else {
+            res.json({ ok: true, data: Array.isArray(result) ? result : [] });
+        }
     });
 
     // API: 清空当前账号运行日志

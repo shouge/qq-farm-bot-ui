@@ -29,10 +29,13 @@ export const useStatusStore = defineStore('status', () => {
   const accountLogs = ref<any[]>([])
   const dailyGifts = ref<DailyGiftsResponse | null>(null)
   const loading = ref(false)
+  const loadingMore = ref(false)
   const error = ref('')
   const realtimeConnected = ref(false)
   const realtimeLogsEnabled = ref(true)
   const currentRealtimeAccountId = ref('')
+  const hasMoreLogs = ref(false)
+  const nextLogCursor = ref<number | null>(null)
   const tokenRef = useStorage('admin_token', '')
 
   let socket: Socket | null = null
@@ -212,11 +215,50 @@ export const useStatusStore = defineStore('status', () => {
       const { data } = await api.get('/api/logs', { headers, params })
       if (data.ok) {
         logs.value = data.data
+        hasMoreLogs.value = !!data.hasMore
+        nextLogCursor.value = data.nextCursor || null
         error.value = ''
       }
     }
     catch (e: any) {
       console.error(e)
+    }
+  }
+
+  async function loadMoreLogs(accountId: string, options: any = {}) {
+    if (!hasMoreLogs.value || !nextLogCursor.value || loadingMore.value) {
+      return
+    }
+
+    if (!accountId && options.accountId !== 'all') {
+      return
+    }
+
+    loadingMore.value = true
+    const params: any = { limit: 100, before: nextLogCursor.value, ...options }
+    const headers: any = {}
+    if (accountId && accountId !== 'all') {
+      headers['x-account-id'] = accountId
+    }
+    else {
+      params.accountId = 'all'
+    }
+
+    try {
+      const { data } = await api.get('/api/logs', { headers, params })
+      if (data.ok && Array.isArray(data.data)) {
+        // 把旧的日志插到前面（因为是更早的历史）
+        logs.value = [...data.data, ...logs.value]
+        hasMoreLogs.value = !!data.hasMore
+        nextLogCursor.value = data.nextCursor || null
+        error.value = ''
+      }
+    }
+    catch (e: any) {
+      console.error(e)
+    }
+    finally {
+      loadingMore.value = false
     }
   }
 
@@ -274,11 +316,14 @@ export const useStatusStore = defineStore('status', () => {
     accountLogs,
     dailyGifts,
     loading,
+    loadingMore,
     error,
     realtimeConnected,
     realtimeLogsEnabled,
+    hasMoreLogs,
     fetchStatus,
     fetchLogs,
+    loadMoreLogs,
     clearLogs,
     fetchAccountLogs,
     fetchDailyGifts,

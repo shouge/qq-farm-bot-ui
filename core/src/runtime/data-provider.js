@@ -6,6 +6,7 @@ function createDataProvider(options) {
         workers,
         globalLogs,
         accountLogs,
+        accountLogsMap,
         store,
         getAccounts,
         callWorkerApi,
@@ -13,11 +14,13 @@ function createDataProvider(options) {
         normalizeStatusForPanel,
         filterLogs,
         addAccountLog,
+        getLogsByAccount,
         nextConfigRevision,
         broadcastConfigToWorkers,
         startWorker,
         stopWorker,
         restartWorker,
+        clearConfigSnapshot,
     } = options;
 
     function getStoredAccountsList() {
@@ -57,12 +60,68 @@ function createDataProvider(options) {
             const max = Math.max(1, Number(opts.limit) || 100);
             const rawRef = normalizeAccountRef(accountRef);
             const accountId = resolveAccountRefId(accountRef);
+
+            let logsSource;
             if (!rawRef) {
-                return filterLogs(globalLogs, opts).slice(-max);
+                logsSource = [...globalLogs];
+            } else if (accountId && getLogsByAccount) {
+                // 优先使用账号分片（性能更好）
+                logsSource = getLogsByAccount(accountId, opts);
+            } else {
+                if (!accountId) return { data: [], hasMore: false, nextCursor: null };
+                const accId = String(accountId || '');
+                logsSource = globalLogs.filter(l => String(l.accountId || '') === accId);
             }
-            if (!accountId) return [];
-            const accId = String(accountId || '');
-            return filterLogs(globalLogs.filter(l => String(l.accountId || '') === accId), opts).slice(-max);
+
+            // 应用过滤（如果还没过滤）
+            const filteredLogs = rawRef && getLogsByAccount
+                ? logsSource
+                : filterLogs(logsSource, opts);
+
+            // 处理分页
+            const before = opts.before ? Number(opts.before) : null;
+            const after = opts.after ? Number(opts.after) : null;
+
+            let result = filteredLogs;
+            let hasMore = false;
+            let nextCursor = null;
+
+            if (before) {
+                // 获取 before 之前的日志（更早的历史）
+                result = filteredLogs.filter(l => {
+                    const ts = Number(l.ts) || Date.parse(String(l.time || ''));
+                    return ts < before;
+                });
+            } else if (after) {
+                // 获取 after 之后的日志（更新的）
+                result = filteredLogs.filter(l => {
+                    const ts = Number(l.ts) || Date.parse(String(l.time || ''));
+                    return ts > after;
+                });
+            }
+
+            // 检查是否有更多数据
+            if (result.length > max) {
+                hasMore = true;
+                result = result.slice(-max);
+                if (result.length > 0) {
+                    const firstEntry = result[0];
+                    nextCursor = Number(firstEntry.ts) || Date.parse(String(firstEntry.time || ''));
+                }
+            } else {
+                result = result.slice(-max);
+            }
+
+            // 兼容旧格式：如果没有分页参数，直接返回数组
+            if (!before && !after && !opts.enablePagination) {
+                return result;
+            }
+
+            return {
+                data: result,
+                hasMore,
+                nextCursor,
+            };
         },
         clearLogs: (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
@@ -71,10 +130,19 @@ function createDataProvider(options) {
             }
             const accId = String(accountId || '');
             let cleared = 0;
+
+            // 从全局日志中清除
             for (let i = globalLogs.length - 1; i >= 0; i -= 1) {
                 if (String((globalLogs[i] && globalLogs[i].accountId) || '') !== accId) continue;
                 globalLogs.splice(i, 1);
                 cleared += 1;
+            }
+
+            // 从账号分片中清除
+            if (accountLogsMap && accountLogsMap.has(accId)) {
+                const accountLogList = accountLogsMap.get(accId);
+                cleared += accountLogList.length;
+                accountLogList.length = 0;
             }
 
             const worker = workers[accId];

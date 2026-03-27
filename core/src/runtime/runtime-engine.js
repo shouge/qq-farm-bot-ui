@@ -34,8 +34,11 @@ function createRuntimeEngine(options = {}) {
     runtimeEvents,
     nextConfigRevision,
     buildConfigSnapshotForAccount,
+    buildConfigDeltaForAccount,
+    clearConfigSnapshot,
     log,
     addAccountLog,
+    getLogsByAccount,
     normalizeStatusForPanel,
     buildDefaultStatus,
     filterLogs,
@@ -104,6 +107,7 @@ function createRuntimeEngine(options = {}) {
     workers,
     globalLogs: GLOBAL_LOGS,
     accountLogs: ACCOUNT_LOGS,
+    accountLogsMap: runtimeState.accountLogsMap,
     store,
     getAccounts: store.getAccounts,
     callWorkerApi,
@@ -111,11 +115,13 @@ function createRuntimeEngine(options = {}) {
     normalizeStatusForPanel,
     filterLogs,
     addAccountLog,
+    getLogsByAccount,
     nextConfigRevision,
     broadcastConfigToWorkers,
     startWorker,
     stopWorker,
     restartWorker,
+    clearConfigSnapshot,
   })
 
   runtimeEvents.on('log', (entry) => {
@@ -129,9 +135,11 @@ function createRuntimeEngine(options = {}) {
     const targetId = String(targetAccountId || '').trim()
     for (const [accId, worker] of Object.entries(workers)) {
       if (targetId && String(accId) !== targetId) continue
-      const snapshot = buildConfigSnapshotForAccount(accId)
+      // 尝试发送增量，如果没有变更则跳过
+      const config = buildConfigDeltaForAccount(accId)
+      if (!config) continue
       try {
-        worker.process.send({ type: 'config_sync', config: snapshot })
+        worker.process.send({ type: 'config_sync', config })
       }
       catch {
         // ignore IPC failures for exited workers

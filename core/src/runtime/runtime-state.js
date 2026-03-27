@@ -25,9 +25,14 @@ function createRuntimeState(options) {
     const workers = {};
     const globalLogs = [];
     const accountLogs = [];
+    const accountLogsMap = new Map(); // 按账号分片的日志
     const runtimeEvents = new EventEmitter();
     let configRevision = Date.now();
     const runtimeLogger = createModuleLogger('runtime');
+
+    // 上次发送的配置快照（用于增量更新）
+    const lastConfigSnapshot = new Map();
+    const MAX_LOGS_PER_ACCOUNT = 500; // 每个账号最多保存 500 条日志
 
     // 预置默认 operations 模板（冻结，避免意外修改）
     const defaultOpsTemplate = {};
@@ -41,6 +46,46 @@ function createRuntimeState(options) {
     function nextConfigRevision() {
         configRevision += 1;
         return configRevision;
+    }
+
+    // 配置字段列表（用于深度比较）
+    const CONFIG_FIELDS = [
+        'automation',
+        'plantingStrategy',
+        'preferredSeedId',
+        'intervals',
+        'friendBlockLevel',
+        'friendQuietHours',
+        'friendBlacklist',
+        'friendCache',
+        'runtimeClient',
+    ];
+
+    // 深度比较两个值是否相等
+    function deepEqual(a, b) {
+        if (a === b) return true;
+        if (a === null || b === null || typeof a !== typeof b) return false;
+        if (typeof a !== 'object') return false;
+
+        const aKeys = Object.keys(a);
+        const bKeys = Object.keys(b);
+        if (aKeys.length !== bKeys.length) return false;
+
+        for (const key of aKeys) {
+            if (!bKeys.includes(key) || !deepEqual(a[key], b[key])) return false;
+        }
+        return true;
+    }
+
+    // 深拷贝对象
+    function deepClone(obj) {
+        if (obj === null || typeof obj !== 'object') return obj;
+        if (Array.isArray(obj)) return obj.map(deepClone);
+        const cloned = {};
+        for (const key of Object.keys(obj)) {
+            cloned[key] = deepClone(obj[key]);
+        }
+        return cloned;
     }
 
     function buildConfigSnapshotForAccount(accountId) {
@@ -58,6 +103,49 @@ function createRuntimeState(options) {
         };
     }
 
+    // 构建配置增量（仅发送变更字段）
+    function buildConfigDeltaForAccount(accountId) {
+        const accId = String(accountId || '').trim();
+        const current = buildConfigSnapshotForAccount(accId);
+        const last = lastConfigSnapshot.get(accId);
+
+        // 如果没有上次快照，返回全量
+        if (!last) {
+            lastConfigSnapshot.set(accId, deepClone(current));
+            return current;
+        }
+
+        // 计算增量
+        const delta = {
+            __revision: current.__revision,
+            __delta: true,
+        };
+
+        let hasChanges = false;
+        for (const field of CONFIG_FIELDS) {
+            if (!deepEqual(current[field], last[field])) {
+                delta[field] = current[field];
+                hasChanges = true;
+            }
+        }
+
+        // 如果没有变更，返回 null
+        if (!hasChanges) {
+            return null;
+        }
+
+        // 保存当前快照
+        lastConfigSnapshot.set(accId, deepClone(current));
+        return delta;
+    }
+
+    // 清除账号的配置快照缓存（账号删除时调用）
+    function clearConfigSnapshot(accountId) {
+        const accId = String(accountId || '').trim();
+        lastConfigSnapshot.delete(accId);
+        accountLogsMap.delete(accId);
+    }
+
     function log(tag, msg, extra = {}) {
         const time = formatLocalDateTime24(new Date());
         const level = tag === '错误' ? 'error' : 'info';
@@ -72,9 +160,36 @@ function createRuntimeState(options) {
             ...extra,
         };
         entry._searchText = `${entry.msg || ''} ${entry.tag || ''} ${JSON.stringify(entry.meta || {})}`.toLowerCase();
+
+        // 写入全局日志
         globalLogs.push(entry);
         if (globalLogs.length > 1000) globalLogs.shift();
+
+        // 写入账号分片日志
+        const accountId = String(entry.accountId || '').trim();
+        if (accountId) {
+            if (!accountLogsMap.has(accountId)) {
+                accountLogsMap.set(accountId, []);
+            }
+            const accountLogList = accountLogsMap.get(accountId);
+            accountLogList.push(entry);
+            if (accountLogList.length > MAX_LOGS_PER_ACCOUNT) {
+                accountLogList.shift();
+            }
+        }
+
         runtimeEvents.emit('log', entry);
+    }
+
+    // 从账号分片快速获取日志
+    function getLogsByAccount(accountId, filters = {}) {
+        const accId = String(accountId || '').trim();
+        if (!accId) return [];
+
+        const accountLogList = accountLogsMap.get(accId);
+        if (!accountLogList) return [];
+
+        return filterLogs(accountLogList, filters);
     }
 
     function addAccountLog(action, msg, accountId = '', accountName = '', extra = {}) {
@@ -212,11 +327,15 @@ function createRuntimeState(options) {
         workers,
         globalLogs,
         accountLogs,
+        accountLogsMap,
         runtimeEvents,
         nextConfigRevision,
         buildConfigSnapshotForAccount,
+        buildConfigDeltaForAccount,
+        clearConfigSnapshot,
         log,
         addAccountLog,
+        getLogsByAccount,
         normalizeStatusForPanel,
         buildDefaultStatus,
         filterLogs,

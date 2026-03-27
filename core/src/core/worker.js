@@ -27,6 +27,7 @@ const { connect, reconnect, cleanup, getWs, getUserState, networkEvents } = requ
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
 const { validateAutomation, validateIntervals } = require('../utils/config-schema');
+const { validateBlockLevel, validateQuietHours } = require('../services/config-validator');
 const { sendToMaster, onMasterMessage, exitWorker } = require('../utils/ipc');
 
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
@@ -290,6 +291,7 @@ function stopUnifiedScheduler() {
 
 function applyRuntimeConfig(snapshot, syncNow = false) {
     const prevAuto = getAutomation();
+    const isDelta = !!(snapshot && snapshot.__delta);
 
     // runtimeClient（全局连接/设备信息）
     let runtimeClientChanged = false;
@@ -338,28 +340,40 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
         }
     }
 
-    // 配置校验
-    const validatedSnapshot = snapshot;
+    // 配置校验（仅校验收到的字段）
+    const validatedSnapshot = { ...snapshot };
     if (snapshot && typeof snapshot === 'object') {
         try {
             if (snapshot.automation) {
-                snapshot.automation = validateAutomation(snapshot.automation);
+                validatedSnapshot.automation = validateAutomation(snapshot.automation);
             }
             if (snapshot.intervals) {
-                snapshot.intervals = validateIntervals(snapshot.intervals);
+                validatedSnapshot.intervals = validateIntervals(snapshot.intervals);
             }
             if (snapshot.friendBlockLevel) {
-                snapshot.friendBlockLevel = validateBlockLevel(snapshot.friendBlockLevel);
+                validatedSnapshot.friendBlockLevel = validateBlockLevel(snapshot.friendBlockLevel);
             }
             if (snapshot.friendQuietHours) {
-                snapshot.friendQuietHours = validateQuietHours(snapshot.friendQuietHours);
+                validatedSnapshot.friendQuietHours = validateQuietHours(snapshot.friendQuietHours);
             }
         } catch (e) {
             log('配置', `配置校验失败: ${e.message}`, { module: 'system', event: 'config_validate' });
         }
     }
-    
-    applyConfigSnapshot(validatedSnapshot || {}, { persist: false });
+
+    // 应用配置（增量或全量）
+    if (isDelta) {
+        // 增量更新：只应用收到的字段
+        const currentFull = getConfigSnapshot();
+        const merged = { ...currentFull, ...validatedSnapshot };
+        // 删除 delta 标记
+        delete merged.__delta;
+        applyConfigSnapshot(merged, { persist: false });
+    } else {
+        // 全量更新
+        applyConfigSnapshot(validatedSnapshot || {}, { persist: false });
+    }
+
     const rev = Number((validatedSnapshot || {}).__revision || 0);
     if (rev > 0) appliedConfigRevision = rev;
 
@@ -391,7 +405,7 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
         resetUnifiedSchedule();
         scheduleUnifiedNextTick();
 
-        // 保存设置后若“自动处理日常”开启，则立即执行一次
+        // 保存设置后若”自动处理日常”开启，则立即执行一次
         const hasAutomationPayload = !!(snapshot && snapshot.automation && typeof snapshot.automation === 'object');
         if (hasAutomationPayload) {
             const nextAuto = getAutomation();
