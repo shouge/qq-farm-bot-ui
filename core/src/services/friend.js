@@ -4,7 +4,6 @@
 
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantName, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
-const { parentPort } = require('node:worker_threads');
 const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getAutomation, getFriendCache, updateFriendCache, getFriendBlockLevel } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -13,6 +12,7 @@ const { getCurrentPhase, setOperationLimitsCallback, buildLandMap, getDisplayLan
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
 const { sellAllFruits } = require('./warehouse');
+const { sendToMaster } = require('../utils/ipc');
 
 // ============ 内部状态 ============
 let isCheckingFriends = false;
@@ -96,20 +96,6 @@ function isEnterFarmBannedError(error) {
     return message.includes('1002003');
 }
 
-function postToMaster(payload) {
-    try {
-        if (process.send) {
-            process.send(payload);
-            return true;
-        }
-        if (parentPort && typeof parentPort.postMessage === 'function') {
-            parentPort.postMessage(payload);
-            return true;
-        }
-    } catch {}
-    return false;
-}
-
 function addFriendToBlacklist(friendGid, friendName, reason = '') {
     const gid = toNum(friendGid);
     if (!gid) return false;
@@ -117,7 +103,7 @@ function addFriendToBlacklist(friendGid, friendName, reason = '') {
     const current = Array.isArray(currentList) ? currentList : [];
     if (current.includes(gid)) return false;
 
-    const sent = postToMaster({
+    const sent = sendToMaster({
         type: 'friend_blacklist_add',
         gid,
         friendName: friendName || `GID:${gid}`,

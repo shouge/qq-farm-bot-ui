@@ -6,6 +6,13 @@ const process = require('node:process');
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
 const { CONFIG: BASE_CONFIG } = require('../config/config');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
+const {
+    validateAccountConfig,
+    validateOfflineReminder,
+    validateQrLoginConfig,
+    validateRuntimeClientConfig,
+    validateFriendCache,
+} = require('../utils/config-schema');
 
 // 批量写入配置
 const SAVE_DEBOUNCE_MS = 500; // 500ms内多次变更合并为一次写入
@@ -14,19 +21,7 @@ let pendingSave = false;
 
 const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
-const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
-const PUSHOO_CHANNELS = new Set([
-    'webhook', 'qmsg', 'serverchan', 'pushplus', 'pushplushxtrip',
-    'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
-    'pushdeer', 'igot', 'telegram', 'feishu', 'ifttt', 'wecombot',
-    'discord', 'wxpusher',
-    'custom_request',
-]);
-const INTERVAL_MAX_SEC = 86400;
 const DEFAULT_OFFLINE_DELETE_SEC = 1;
-const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
-const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
-const DEFAULT_STEAL_PLANT_BLACKLIST = [];
 const DEFAULT_OFFLINE_REMINDER = {
     channel: 'webhook',
     reloginUrlMode: 'none',
@@ -128,7 +123,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         friend: true,       // 好友互动总开关
         friend_help_exp_limit: true, // 帮忙经验达上限后自动停止帮忙
         friend_steal: true, // 偷菜
-        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST], // 偷菜作物黑名单（按作物ID）
+        friend_steal_blacklist: [], // 偷菜作物黑名单（按作物ID）
         friend_help: true,  // 帮忙
         friend_bad: false,  // 捣乱(放虫草)
         task: true,
@@ -147,7 +142,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         sell: false,
         fertilizer: 'none',
         fertilizer_multi_season: false,
-        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
+        fertilizer_land_types: ['gold', 'black', 'red', 'normal'],
     },
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
@@ -172,14 +167,12 @@ const DEFAULT_ACCOUNT_CONFIG = {
     friendBlacklist: [],
     friendCache: [],
 };
-const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
-
 let accountFallbackConfig = {
     ...DEFAULT_ACCOUNT_CONFIG,
     automation: {
         ...DEFAULT_ACCOUNT_CONFIG.automation,
-        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
-        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST],
+        fertilizer_land_types: ['gold', 'black', 'red', 'normal'],
+        friend_steal_blacklist: [],
     },
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendBlockLevel: { ...DEFAULT_ACCOUNT_CONFIG.friendBlockLevel },
@@ -200,250 +193,68 @@ const globalConfig = {
 };
 
 function normalizeOfflineReminder(input) {
-    const src = (input && typeof input === 'object') ? input : {};
-    let offlineDeleteSec = Number.parseInt(src.offlineDeleteSec, 10);
-    if (!Number.isFinite(offlineDeleteSec) || offlineDeleteSec < 1) {
-        offlineDeleteSec = DEFAULT_OFFLINE_REMINDER.offlineDeleteSec;
-    }
-    const rawChannel = (src.channel !== undefined && src.channel !== null)
-        ? String(src.channel).trim().toLowerCase()
-        : '';
-    const endpoint = (src.endpoint !== undefined && src.endpoint !== null)
-        ? String(src.endpoint).trim()
-        : DEFAULT_OFFLINE_REMINDER.endpoint;
-    const migratedChannel = rawChannel
-        || (PUSHOO_CHANNELS.has(String(endpoint || '').trim().toLowerCase())
-            ? String(endpoint || '').trim().toLowerCase()
-            : DEFAULT_OFFLINE_REMINDER.channel);
-    const channel = PUSHOO_CHANNELS.has(migratedChannel)
-        ? migratedChannel
-        : DEFAULT_OFFLINE_REMINDER.channel;
-    const rawReloginUrlMode = (src.reloginUrlMode !== undefined && src.reloginUrlMode !== null)
-        ? String(src.reloginUrlMode).trim().toLowerCase()
-        : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
-    const reloginUrlMode = new Set(['none', 'qq_link', 'qr_code','all']).has(rawReloginUrlMode)
-        ? rawReloginUrlMode
-        : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
-    const token = (src.token !== undefined && src.token !== null)
-        ? String(src.token).trim()
-        : DEFAULT_OFFLINE_REMINDER.token;
-    const title = (src.title !== undefined && src.title !== null)
-        ? String(src.title).trim()
-        : DEFAULT_OFFLINE_REMINDER.title;
-    const msg = (src.msg !== undefined && src.msg !== null)
-        ? String(src.msg).trim()
-        : DEFAULT_OFFLINE_REMINDER.msg;
-    const offlineDeleteEnabled = src.offlineDeleteEnabled !== undefined
-        ? !!src.offlineDeleteEnabled
-        : !!DEFAULT_OFFLINE_REMINDER.offlineDeleteEnabled;
-    const custom_headers = (src.custom_headers !== undefined && src.custom_headers !== null)
-        ? String(src.custom_headers).trim()
-        : DEFAULT_OFFLINE_REMINDER.custom_headers;
-    const custom_body = (src.custom_body !== undefined && src.custom_body !== null)
-        ? String(src.custom_body).trim()
-        : DEFAULT_OFFLINE_REMINDER.custom_body;
-    return {
-        channel,
-        reloginUrlMode,
-        endpoint,
-        token,
-        title,
-        msg,
-        offlineDeleteSec,
-        offlineDeleteEnabled,
-        custom_headers,
-        custom_body,
-    };
-}
-
-
-function normalizeApiDomain(input, fallback = DEFAULT_QR_LOGIN.apiDomain) {
-    const raw = String(input || '').trim();
-    if (!raw) return fallback;
-    const normalized = /^https?:\/\//i.test(raw) ? raw : (`https://${  raw}`);
-    try {
-        const parsed = new URL(normalized);
-        const host = String(parsed.host || '').trim();
-        return host || fallback;
-    } catch {
-        return fallback;
-    }
+    return validateOfflineReminder(input);
 }
 
 
 function normalizeQrLoginConfig(input) {
-    const src = (input && typeof input === 'object') ? input : {};
-    return {
-        apiDomain: normalizeApiDomain(src.apiDomain, DEFAULT_QR_LOGIN.apiDomain),
+    return validateQrLoginConfig(input);
+}
+
+function normalizeRuntimeClientConfig(input, fallback = null) {
+    const base = fallback || {
+        serverUrl: BASE_CONFIG.serverUrl,
+        clientVersion: BASE_CONFIG.clientVersion,
+        os: BASE_CONFIG.os,
+        device_info: BASE_CONFIG.device_info || {},
     };
-}
-
-function normalizeRuntimeClientVersion(input, fallback = DEFAULT_RUNTIME_CLIENT.clientVersion) {
-    const raw = String(input || '').trim();
-    if (!raw) return fallback;
-    if (raw.length > 64) return fallback;
-    if (!/^[\w.-]+$/.test(raw)) return fallback;
-    return raw;
-}
-
-function normalizeRuntimeClientOs(input, fallback = DEFAULT_RUNTIME_CLIENT.os) {
-    const raw = String(input || '').trim();
-    if (!raw) return fallback;
-    if (raw.length > 16) return fallback;
-    if (!/^[\w.-]+$/.test(raw)) return fallback;
-    return raw;
-}
-
-function normalizeRuntimeClientServerUrl(input, fallback = DEFAULT_RUNTIME_CLIENT.serverUrl) {
-    const raw = String(input || '').trim();
-    if (!raw) return fallback;
-    // serverUrl 需要是 base url，query 由 network.connect() 追加
-    if (raw.includes('?') || raw.includes('#')) return fallback;
-    try {
-        const parsed = new URL(raw);
-        const protocol = String(parsed.protocol || '').toLowerCase();
-        if (protocol !== 'ws:' && protocol !== 'wss:') return fallback;
-        return parsed.toString().replace(/\/$/, '');
-    } catch {
-        return fallback;
-    }
-}
-
-function normalizeRuntimeClientDeviceInfo(input, fallback = DEFAULT_RUNTIME_CLIENT.device_info) {
-    const src = (input && typeof input === 'object') ? input : {};
-    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_RUNTIME_CLIENT.device_info;
-    const toStr = (v, d, maxLen = 200) => {
-        const s = String(v !== undefined && v !== null ? v : d).trim();
-        if (!s) return String(d || '').trim();
-        return s.length > maxLen ? s.slice(0, maxLen) : s;
-    };
-    return {
-        sys_software: toStr(src.sys_software, base.sys_software, 100),
-        network: toStr(src.network, base.network, 32),
-        memory: toStr(src.memory, base.memory, 32),
-        device_id: toStr(src.device_id, base.device_id, 120),
-    };
-}
-
-function normalizeRuntimeClientConfig(input) {
-    const src = (input && typeof input === 'object') ? input : {};
-    const current = normalizeRuntimeClientConfig.current || DEFAULT_RUNTIME_CLIENT;
-    const fallback = (current && typeof current === 'object') ? current : DEFAULT_RUNTIME_CLIENT;
-    const baseDevice = (fallback.device_info && typeof fallback.device_info === 'object')
-        ? fallback.device_info
-        : DEFAULT_RUNTIME_CLIENT.device_info;
-
-    const next = {
-        serverUrl: normalizeRuntimeClientServerUrl(src.serverUrl, fallback.serverUrl),
-        clientVersion: normalizeRuntimeClientVersion(src.clientVersion, fallback.clientVersion),
-        os: normalizeRuntimeClientOs(src.os, fallback.os),
-        device_info: normalizeRuntimeClientDeviceInfo(src.device_info, baseDevice),
-    };
-    return next;
+    return validateRuntimeClientConfig(input, base);
 }
 
 function getRuntimeClientConfig() {
-    const current = globalConfig.runtimeClient || DEFAULT_RUNTIME_CLIENT;
-    // 提供当前值作为 normalize fallback
-    normalizeRuntimeClientConfig.current = current;
-    const normalized = normalizeRuntimeClientConfig(current);
-    delete normalizeRuntimeClientConfig.current;
+    const current = globalConfig.runtimeClient;
+    const base = {
+        serverUrl: BASE_CONFIG.serverUrl,
+        clientVersion: BASE_CONFIG.clientVersion,
+        os: BASE_CONFIG.os,
+        device_info: BASE_CONFIG.device_info || {},
+    };
+    const validated = validateRuntimeClientConfig(current, base);
     // device_info.client_version 永远由 clientVersion 派生
     return {
-        ...normalized,
+        ...validated,
         device_info: {
-            ...normalized.device_info,
-            client_version: normalized.clientVersion,
+            ...validated.device_info,
+            client_version: validated.clientVersion,
         },
     };
 }
 
 function setRuntimeClientConfig(cfg) {
     const current = getRuntimeClientConfig();
-    const incoming = (cfg && typeof cfg === 'object') ? cfg : {};
     const merged = {
         ...current,
-        ...incoming,
+        ...cfg,
         device_info: {
             ...(current.device_info || {}),
-            ...((incoming.device_info && typeof incoming.device_info === 'object') ? incoming.device_info : {}),
+            ...(cfg?.device_info || {}),
         },
     };
-    // normalize 时使用 merged 作为 fallback
-    normalizeRuntimeClientConfig.current = merged;
-    const normalized = normalizeRuntimeClientConfig(merged);
-    delete normalizeRuntimeClientConfig.current;
+    const validated = validateRuntimeClientConfig(merged, {
+        serverUrl: BASE_CONFIG.serverUrl,
+        clientVersion: BASE_CONFIG.clientVersion,
+        os: BASE_CONFIG.os,
+        device_info: BASE_CONFIG.device_info || {},
+    });
     globalConfig.runtimeClient = {
-        ...normalized,
-        device_info: { ...normalized.device_info },
+        ...validated,
+        device_info: { ...validated.device_info },
     };
     saveGlobalConfig();
     return getRuntimeClientConfig();
 }
-function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
-    const source = Array.isArray(input) ? input : fallback;
-    const normalized = [];
-    for (const item of source) {
-        const value = String(item || '').trim().toLowerCase();
-        if (!FERTILIZER_LAND_TYPE_SET.has(value)) continue;
-        if (normalized.includes(value)) continue;
-        normalized.push(value);
-    }
-    return normalized;
-}
-
-function normalizeStealPlantBlacklist(input, fallback = DEFAULT_STEAL_PLANT_BLACKLIST) {
-    const source = Array.isArray(input) ? input : fallback;
-    const normalized = [];
-    for (const item of source) {
-        const value = Number.parseInt(item, 10);
-        if (!Number.isFinite(value) || value <= 0) continue;
-        if (normalized.includes(value)) continue;
-        normalized.push(value);
-    }
-    return normalized;
-}
-
-function normalizeBagSeedPriority(input) {
-    if (!Array.isArray(input)) return [];
-    const normalized = [];
-    for (const item of input) {
-        const value = Number.parseInt(item, 10);
-        if (!Number.isFinite(value) || value <= 0) continue;
-        if (normalized.includes(value)) continue;
-        normalized.push(value);
-    }
-    return normalized;
-}
-
-function normalizeFertilizerBuyAutomation(automation) {
-    const next = (automation && typeof automation === 'object') ? automation : {};
-    const mode = String(next.fertilizer_buy_mode || '').trim().toLowerCase();
-    const type = String(next.fertilizer_buy_type || '').trim().toLowerCase();
-    if (mode === 'unlimited' && type === 'both') {
-        next.fertilizer_buy_type = 'organic';
-    }
-    return next;
-}
-
 function normalizeFriendCache(input) {
-    if (!Array.isArray(input)) return [];
-    const seen = new Set();
-    const normalized = [];
-    for (const item of input) {
-        if (!item || typeof item !== 'object') continue;
-        const gid = Number(item.gid);
-        if (!Number.isFinite(gid) || gid <= 0) continue;
-        if (seen.has(gid)) continue;
-        seen.add(gid);
-        normalized.push({
-            gid,
-            nick: String(item.nick || '').trim() || `GID:${gid}`,
-            avatarUrl: String(item.avatarUrl || '').trim(),
-            lastAccessed: item.lastAccessed || Date.now(),
-        });
-    }
-    return normalized;
+    return validateFriendCache(input);
 }
 
 function mergeFriendCache(existing, newItems) {
@@ -465,39 +276,7 @@ function mergeFriendCache(existing, newItems) {
 }
 
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
-    const srcAutomation = (base && base.automation && typeof base.automation === 'object')
-        ? base.automation
-        : {};
-    const automation = { ...DEFAULT_ACCOUNT_CONFIG.automation };
-    for (const key of Object.keys(automation)) {
-        if (key === 'fertilizer_land_types') {
-            automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES);
-            continue;
-        }
-        if (key === 'friend_steal_blacklist') {
-            automation[key] = normalizeStealPlantBlacklist(srcAutomation[key], DEFAULT_STEAL_PLANT_BLACKLIST);
-            continue;
-        }
-        if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];
-    }
-    normalizeFertilizerBuyAutomation(automation);
-
-    const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
-    const rawFriendCache = Array.isArray(base.friendCache) ? base.friendCache : [];
-    return {
-        ...base,
-        automation,
-        intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
-        friendBlockLevel: { ...(base.friendBlockLevel || DEFAULT_ACCOUNT_CONFIG.friendBlockLevel) },
-        friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
-        friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
-        friendCache: normalizeFriendCache(rawFriendCache),
-        plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
-            ? String(base.plantingStrategy)
-            : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
-        preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
-        bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
-    };
+    return validateAccountConfig(base, DEFAULT_ACCOUNT_CONFIG);
 }
 
 function resolveAccountId(accountId) {
@@ -508,84 +287,7 @@ function resolveAccountId(accountId) {
 }
 
 function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
-    const src = (input && typeof input === 'object') ? input : {};
-    const cfg = cloneAccountConfig(fallback || DEFAULT_ACCOUNT_CONFIG);
-
-    if (src.automation && typeof src.automation === 'object') {
-        for (const [k, v] of Object.entries(src.automation)) {
-            if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue;
-            if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'none'];
-                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
-            } else if (k === 'fertilizer_buy_type') {
-                cfg.automation[k] = ['organic', 'normal', 'both'].includes(v) ? v : cfg.automation[k];
-            } else if (k === 'fertilizer_buy_mode') {
-                cfg.automation[k] = ['threshold', 'unlimited'].includes(v) ? v : cfg.automation[k];
-            } else if (k === 'fertilizer_buy_max') {
-                const n = Number(v);
-                cfg.automation[k] = (Number.isFinite(n) && n >= 1 && n <= 10) ? Math.floor(n) : cfg.automation[k];
-            } else if (k === 'fertilizer_buy_threshold') {
-                const n = Number(v);
-                cfg.automation[k] = (Number.isFinite(n) && n >= 0) ? n : cfg.automation[k];
-            } else if (k === 'fertilizer_land_types') {
-                cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]);
-            } else if (k === 'friend_steal_blacklist') {
-                cfg.automation[k] = normalizeStealPlantBlacklist(v, cfg.automation[k]);
-            } else {
-                cfg.automation[k] = !!v;
-            }
-        }
-        normalizeFertilizerBuyAutomation(cfg.automation);
-    }
-
-    if (src.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(src.plantingStrategy)) {
-        cfg.plantingStrategy = src.plantingStrategy;
-    }
-
-    if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
-        cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
-    }
-
-    if (src.bagSeedPriority !== undefined) {
-        cfg.bagSeedPriority = normalizeBagSeedPriority(src.bagSeedPriority);
-    }
-
-    if (src.intervals && typeof src.intervals === 'object') {
-        for (const [type, sec] of Object.entries(src.intervals)) {
-            if (cfg.intervals[type] === undefined) continue;
-            cfg.intervals[type] = Math.max(1, Number.parseInt(sec, 10) || cfg.intervals[type] || 1);
-        }
-        cfg.intervals = normalizeIntervals(cfg.intervals);
-    } else {
-        cfg.intervals = normalizeIntervals(cfg.intervals);
-    }
-
-    if (src.friendBlockLevel && typeof src.friendBlockLevel === 'object') {
-        const old = cfg.friendBlockLevel || {};
-        cfg.friendBlockLevel = {
-            enabled: src.friendBlockLevel.enabled !== undefined ? !!src.friendBlockLevel.enabled : !!old.enabled,
-            Level: normalizeBlockLevel(src.friendBlockLevel.Level),
-        };
-    }
-
-    if (src.friendQuietHours && typeof src.friendQuietHours === 'object') {
-        const old = cfg.friendQuietHours || {};
-        cfg.friendQuietHours = {
-            enabled: src.friendQuietHours.enabled !== undefined ? !!src.friendQuietHours.enabled : !!old.enabled,
-            start: normalizeTimeString(src.friendQuietHours.start, old.start || '23:00'),
-            end: normalizeTimeString(src.friendQuietHours.end, old.end || '07:00'),
-        };
-    }
-
-    if (Array.isArray(src.friendBlacklist)) {
-        cfg.friendBlacklist = src.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
-    }
-
-    if (Array.isArray(src.friendCache)) {
-        cfg.friendCache = normalizeFriendCache(src.friendCache);
-    }
-
-    return cfg;
+    return validateAccountConfig(input, fallback);
 }
 
 function getAccountConfigSnapshot(accountId) {
@@ -797,10 +499,9 @@ function setDisablePasswordAuth(disabled) {
 loadGlobalConfig();
 
 function getAutomation(accountId) {
-    const automation = { ...getAccountConfigSnapshot(accountId).automation };
-    automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
-    automation.friend_steal_blacklist = normalizeStealPlantBlacklist(automation.friend_steal_blacklist);
-    return automation;
+    const { validateAutomation } = require('../utils/config-schema');
+    const automation = getAccountConfigSnapshot(accountId).automation;
+    return validateAutomation(automation);
 }
 
 function getConfigSnapshot(accountId) {
@@ -825,79 +526,7 @@ function applyConfigSnapshot(snapshot, options = {}) {
     const accountId = options.accountId;
 
     const current = getAccountConfigSnapshot(accountId);
-    const next = normalizeAccountConfig(current, accountFallbackConfig);
-
-    if (cfg.automation && typeof cfg.automation === 'object') {
-        for (const [k, v] of Object.entries(cfg.automation)) {
-            if (next.automation[k] === undefined) continue;
-            if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'none'];
-                next.automation[k] = allowed.includes(v) ? v : next.automation[k];
-            } else if (k === 'fertilizer_buy_type') {
-                next.automation[k] = ['organic', 'normal', 'both'].includes(v) ? v : next.automation[k];
-            } else if (k === 'fertilizer_buy_mode') {
-                next.automation[k] = ['threshold', 'unlimited'].includes(v) ? v : next.automation[k];
-            } else if (k === 'fertilizer_buy_max') {
-                const n = Number(v);
-                next.automation[k] = (Number.isFinite(n) && n >= 1 && n <= 10) ? Math.floor(n) : next.automation[k];
-            } else if (k === 'fertilizer_buy_threshold') {
-                const n = Number(v);
-                next.automation[k] = (Number.isFinite(n) && n >= 0) ? n : next.automation[k];
-            } else if (k === 'fertilizer_land_types') {
-                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]);
-            } else if (k === 'friend_steal_blacklist') {
-                next.automation[k] = normalizeStealPlantBlacklist(v, next.automation[k]);
-            } else {
-                next.automation[k] = !!v;
-            }
-        }
-        normalizeFertilizerBuyAutomation(next.automation);
-    }
-
-    if (cfg.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(cfg.plantingStrategy)) {
-        next.plantingStrategy = cfg.plantingStrategy;
-    }
-
-    if (cfg.preferredSeedId !== undefined && cfg.preferredSeedId !== null) {
-        next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
-    }
-
-    if (cfg.bagSeedPriority !== undefined) {
-        next.bagSeedPriority = normalizeBagSeedPriority(cfg.bagSeedPriority);
-    }
-
-    if (cfg.intervals && typeof cfg.intervals === 'object') {
-        for (const [type, sec] of Object.entries(cfg.intervals)) {
-            if (next.intervals[type] === undefined) continue;
-            next.intervals[type] = Math.max(1, Number.parseInt(sec, 10) || next.intervals[type] || 1);
-        }
-        next.intervals = normalizeIntervals(next.intervals);
-    }
-
-    if (cfg.friendBlockLevel && typeof cfg.friendBlockLevel === 'object') {
-        const old = next.friendBlockLevel || {};
-        next.friendBlockLevel = {
-            enabled: cfg.friendBlockLevel.enabled !== undefined ? !!cfg.friendBlockLevel.enabled : !!old.enabled,
-            Level: normalizeBlockLevel(cfg.friendBlockLevel.Level),
-        };
-    }
-
-    if (cfg.friendQuietHours && typeof cfg.friendQuietHours === 'object') {
-        const old = next.friendQuietHours || {};
-        next.friendQuietHours = {
-            enabled: cfg.friendQuietHours.enabled !== undefined ? !!cfg.friendQuietHours.enabled : !!old.enabled,
-            start: normalizeTimeString(cfg.friendQuietHours.start, old.start || '23:00'),
-            end: normalizeTimeString(cfg.friendQuietHours.end, old.end || '07:00'),
-        };
-    }
-
-    if (Array.isArray(cfg.friendBlacklist)) {
-        next.friendBlacklist = cfg.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
-    }
-
-    if (Array.isArray(cfg.friendCache)) {
-        next.friendCache = normalizeFriendCache(cfg.friendCache);
-    }
+    const next = validateAccountConfig(cfg, current);
 
     if (cfg.ui && typeof cfg.ui === 'object') {
         const theme = String(cfg.ui.theme || '').toLowerCase();
@@ -932,7 +561,8 @@ function getBagSeedPriority(accountId) {
 }
 
 function setPlantingStrategy(accountId, strategy) {
-    if (!ALLOWED_PLANTING_STRATEGIES.includes(strategy)) return false;
+    const { ALLOWED_VALUES } = require('../utils/config-schema');
+    if (!ALLOWED_VALUES.plantingStrategy.has(strategy)) return false;
     applyConfigSnapshot({ plantingStrategy: strategy }, { accountId });
     return true;
 }
@@ -942,53 +572,12 @@ function getIntervals(accountId) {
 }
 
 function normalizeIntervals(intervals) {
-    const src = (intervals && typeof intervals === 'object') ? intervals : {};
-    const toSec = (v, d) => {
-        const n = Number.parseInt(v, 10);
-        const base = Number.isFinite(n) ? n : d;
-        return Math.max(1, Math.min(INTERVAL_MAX_SEC, base));
-    };
-    const farm = toSec(src.farm, 2);
-    const friend = toSec(src.friend, 10);
-
-    let farmMin = toSec(src.farmMin, farm);
-    let farmMax = toSec(src.farmMax, farm);
-    if (farmMin > farmMax) [farmMin, farmMax] = [farmMax, farmMin];
-
-    let friendMin = toSec(src.friendMin, friend);
-    let friendMax = toSec(src.friendMax, friend);
-    if (friendMin > friendMax) [friendMin, friendMax] = [friendMax, friendMin];
-
-    return {
-        ...src,
-        farm,
-        friend,
-        farmMin,
-        farmMax,
-        friendMin,
-        friendMax,
-    };
-}
-
-function normalizeBlockLevel(Level) {
-    const num = Number(Level);
-    if (Number.isNaN(num) || num < 1) {
-        return 1;
-    }
-    return Math.floor(num);
+    const { validateIntervals: schemaValidateIntervals } = require('../utils/config-schema');
+    return schemaValidateIntervals(intervals);
 }
 
 function getFriendBlockLevel(accountId) {
     return { ...getAccountConfigSnapshot(accountId).friendBlockLevel };
-}
-
-function normalizeTimeString(v, fallback) {
-    const s = String(v || '').trim();
-    const m = s.match(/^(\d{1,2}):(\d{1,2})$/);
-    if (!m) return fallback;
-    const hh = Math.max(0, Math.min(23, Number.parseInt(m[1], 10)));
-    const mm = Math.max(0, Math.min(59, Number.parseInt(m[2], 10)));
-    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
 function getFriendQuietHours(accountId) {

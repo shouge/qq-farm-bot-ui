@@ -26,39 +26,11 @@ const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = 
 const { connect, reconnect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
-const { validateAutomation, validateIntervals, validateQuietHours, validateBlockLevel } = require('../services/config-validator');
+const { validateAutomation, validateIntervals } = require('../utils/config-schema');
+const { sendToMaster, onMasterMessage, exitWorker } = require('../utils/ipc');
 
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
     process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
-}
-
-function sendToMaster(payload) {
-    if (process.send) {
-        process.send(payload);
-        return;
-    }
-    if (parentPort) {
-        parentPort.postMessage(payload);
-    }
-}
-
-function onMasterMessage(handler) {
-    if (process.send) {
-        process.on('message', handler);
-    }
-    if (parentPort) {
-        parentPort.on('message', handler);
-    }
-}
-
-function exitWorker(code = 0) {
-    if (parentPort) {
-        try {
-            parentPort.close();
-        } catch {}
-        return;
-    }
-    process.exit(code);
 }
 
 function pad2(n) {
