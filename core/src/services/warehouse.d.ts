@@ -1,0 +1,11 @@
+export function getBag(): Promise<any>;
+export function getBagDetail(): Promise<any>;
+export function getBagSeeds(): Promise<any>;
+export function sellItems(itemId: number, count: number): Promise<any>;
+export function useItem(itemId: number, count?: number): Promise<any>;
+export function batchUseItems(itemIds: number[]): Promise<any>;
+export function openFertilizerGiftPacksSilently(): Promise<any>;
+export function sellAllFruits(): Promise<any>;
+export function getBagItems(bagReply: any): any[];
+export function getCurrentContainerHours(): number;
+export function getCurrentTotalsFromBag(bagReply: any): Record<string, number>;

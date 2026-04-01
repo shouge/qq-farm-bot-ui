@@ -5,15 +5,17 @@
   "license": "ISC",
   "author": "",
   "type": "commonjs",
-  "main": "client.js",
-  "bin": "client.js",
+  "main": "dist/main.js",
+  "bin": "dist/main.js",
   "scripts": {
-    "start": "node client.js",
-    "dev": "node client.js",
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts",
+    "build": "tsc",
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
     "build:mac": "pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint . --fix",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -30,9 +32,14 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^7.4.3",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
+    "@types/qrcode": "^1.5.6",
+    "@types/ws": "^8.18.1",
     "eslint": "^9.39.1",
-    "pkg": "^5.8.1"
+    "pkg": "^5.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
   },
   "pkg": {
     "assets": [

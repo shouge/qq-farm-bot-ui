@@ -1,0 +1,11 @@
+export function getPlantName(plantId: number): string;
+export function getPlantExp(plantId: number): number;
+export function getPlantNameBySeedId(seedId: number): string;
+export function getPlantGrowTime(seedId: number): number;
+export function formatGrowTime(seconds: number): string;
+export function getPlantBySeedId(seedId: number): any;
+export function getPlantById(plantId: number): any;
+export function getSeedImageBySeedId(seedId: number): string;
+export function getAllSeeds(): Array<any>;
+export function getLevelExpProgress(level: number, exp: number): { current: number; needed: number; level: number };
+export function enableHotReload(enable: boolean): void;
