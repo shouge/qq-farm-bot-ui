@@ -55,7 +55,7 @@ export class BotLifecycleService {
     this.configSync.apply(getConfigSnapshot(), false);
 
     initStatusBar();
-    setStatusPlatform(config.platform);
+    setStatusPlatform(config.platform === 'wx' ? 'wx' : 'qq');
 
     // 注册 WebSocket 错误处理
     this.onWsErrorHandler = (payload: unknown) => {
