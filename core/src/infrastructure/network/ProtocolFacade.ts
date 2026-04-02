@@ -1,6 +1,6 @@
 import type { INetworkClient, UserStateSnapshot } from '../../domain/ports/INetworkClient';
 import { types } from '../../utils/proto';
-import { toLong, toNum } from '../../utils/utils';
+import { toLong } from '../../utils/utils';
 
 export interface HarvestReply {
   land: Array<{

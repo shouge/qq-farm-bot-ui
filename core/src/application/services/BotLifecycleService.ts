@@ -11,10 +11,10 @@ import type { StatusReporter } from './StatusReporter';
 import { loadProto } from '../../utils/proto';
 import { getBag, getBagItems } from '../../services/warehouse';
 import { processInviteCodes } from '../../services/invite';
-import { setInitialValues, resetSessionGains } from '../../services/stats';
+import { resetSessionGains, setInitialValues } from '../../services/stats';
 import { initStatusBar, setStatusPlatform } from '../../services/status';
 import { toNum } from '../../utils/utils';
-import { ItemId, AutomationFeature, WorkerMessageType, WebSocketErrorCode, EventName } from '../../domain/enums';
+import { AutomationFeature, EventName, ItemId, WebSocketErrorCode, WorkerMessageType } from '../../domain/enums';
 
 export interface StartBotConfig {
   code: string;

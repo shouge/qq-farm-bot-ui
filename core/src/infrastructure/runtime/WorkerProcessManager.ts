@@ -1,4 +1,4 @@
-import { fork, ChildProcess } from 'node:child_process';
+import { ChildProcess, fork } from 'node:child_process';
 import { Worker as WorkerThread } from 'node:worker_threads';
 import process from 'node:process';
 import type { IWorkerProcessManager } from '../../domain/ports/IWorkerProcessManager';
@@ -11,12 +11,10 @@ import { WORKER_API_TIMEOUT_MS, WORKER_FORCE_KILL_DELAY_MS, WORKER_RESTART_FALLB
  * This abstraction allows uniform handling of both runtime modes.
  */
 interface IWorkerProcess {
-  send?(message: unknown): void;
-  kill?(): void;
-  on?(event: 'message', listener: (msg: unknown) => void): void;
-  on?(event: 'error', listener: (err: Error) => void): void;
-  on?(event: 'exit', listener: (code: number | null, signal: string | null) => void): void;
-  once?(event: 'exit', listener: (code: number | null, signal: string | null) => void): void;
+  send?: (message: unknown) => void;
+  kill?: () => void;
+  on?: ((event: 'message', listener: (msg: unknown) => void) => void) & ((event: 'error', listener: (err: Error) => void) => void) & ((event: 'exit', listener: (code: number | null, signal: string | null) => void) => void);
+  once?: (event: 'exit', listener: (code: number | null, signal: string | null) => void) => void;
 }
 
 export type WorkerProcess = ChildProcess | WorkerThread;

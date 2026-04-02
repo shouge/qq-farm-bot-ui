@@ -14,6 +14,9 @@ const { recordOperation } = require('./stats');
 const { sellAllFruits } = require('./warehouse');
 const { sendToMaster } = require('../utils/ipc');
 
+// Module-level regex constants
+const TIME_PARSE_REGEX = /^(\d{1,2}):(\d{1,2})$/;
+
 // ============ 内部状态 ============
 let isCheckingFriends = false;
 let friendLoopRunning = false;
@@ -68,7 +71,7 @@ function getStealPlantBlacklistSet() {
 }
 
 function parseTimeToMinutes(timeStr) {
-    const m = String(timeStr || '').match(/^(\d{1,2}):(\d{1,2})$/);
+    const m = String(timeStr || '').match(TIME_PARSE_REGEX);
     if (!m) return null;
     const h = Number.parseInt(m[1], 10);
     const min = Number.parseInt(m[2], 10);

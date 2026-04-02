@@ -142,9 +142,9 @@ function getStats(statusData, userState, connected, limits) {
     const userObj = (userState && typeof userState === 'object') ? userState : {};
 
     // 优先使用 network 层 userState（通常是最新实时值），statusData 仅作为兜底
-    const rawGold = (userObj.gold !== null && userObj.gold !== undefined) ? userObj.gold : statusObj.gold;
-    const rawExp = (userObj.exp !== null && userObj.exp !== undefined) ? userObj.exp : statusObj.exp;
-    const rawCoupon = (userObj.coupon !== null && userObj.coupon !== undefined) ? userObj.coupon : statusObj.coupon;
+    const rawGold = userObj.gold ?? statusObj.gold;
+    const rawExp = userObj.exp ?? statusObj.exp;
+    const rawCoupon = userObj.coupon ?? statusObj.coupon;
     const currentGold = Number.isFinite(Number(rawGold)) ? Number(rawGold) : 0;
     const currentExp = Number.isFinite(Number(rawExp)) ? Number(rawExp) : 0;
     const currentCoupon = Number.isFinite(Number(rawCoupon)) ? Number(rawCoupon) : 0;

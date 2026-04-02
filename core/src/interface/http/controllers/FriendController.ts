@@ -1,6 +1,8 @@
 import type { Request, Response } from 'express';
 import type { IPanelDataProvider } from '../../../domain/ports/IPanelDataProvider';
 
+const GID_SPLIT_REGEX = /[,，\s]+/;
+
 export class FriendController {
   constructor(private readonly provider: IPanelDataProvider) {}
 
@@ -145,7 +147,7 @@ export class FriendController {
       const input = req.body.gids;
       let gids: any[] = [];
       if (typeof input === 'string') {
-        gids = input.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+        gids = input.split(GID_SPLIT_REGEX).map((s) => s.trim()).filter(Boolean);
       } else if (Array.isArray(input)) {
         gids = input;
       }

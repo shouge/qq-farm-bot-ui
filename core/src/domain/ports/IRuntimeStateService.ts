@@ -40,17 +40,17 @@ export interface IRuntimeStateService {
   accountLogs: AccountLogEntry[];
   accountLogsMap: Map<string, AccountLogEntry[]>;
 
-  nextConfigRevision(): number;
-  buildConfigSnapshotForAccount(accountId: string): any;
-  buildConfigDeltaForAccount(accountId: string): any | null;
-  clearConfigSnapshot(accountId: string): void;
+  nextConfigRevision: () => number;
+  buildConfigSnapshotForAccount: (accountId: string) => any;
+  buildConfigDeltaForAccount: (accountId: string) => any | null;
+  clearConfigSnapshot: (accountId: string) => void;
 
-  log(tag: string, msg: string, extra?: any): void;
-  addAccountLog(action: string, msg: string, accountId?: string, accountName?: string, extra?: any): void;
-  getLogsByAccount(accountId: string, filters?: any): RuntimeLogEntry[];
+  log: (tag: string, msg: string, extra?: any) => void;
+  addAccountLog: (action: string, msg: string, accountId?: string, accountName?: string, extra?: any) => void;
+  getLogsByAccount: (accountId: string, filters?: any) => RuntimeLogEntry[];
 
-  normalizeStatusForPanel(data: any, accountId: string, accountName: string): any;
-  buildDefaultStatus(accountId: string): any;
-  buildDefaultOperations(): Record<string, number>;
-  filterLogs(list: RuntimeLogEntry[], filters?: any): RuntimeLogEntry[];
+  normalizeStatusForPanel: (data: any, accountId: string, accountName: string) => any;
+  buildDefaultStatus: (accountId: string) => any;
+  buildDefaultOperations: () => Record<string, number>;
+  filterLogs: (list: RuntimeLogEntry[], filters?: any) => RuntimeLogEntry[];
 }

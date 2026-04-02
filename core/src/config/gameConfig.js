@@ -7,6 +7,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getResourcePath } = require('./runtime-paths');
 
+// Module-level regex constants to avoid re-compilation
+const SEED_IMAGE_BY_ID_REGEX = /^(\d+)_.*\.(?:png|jpg|jpeg|webp|gif)$/i;
+const SEED_IMAGE_BY_ASSET_REGEX = /(Crop_\d+)_Seed\.(?:png|jpg|jpeg|webp|gif)$/i;
+const GROW_PHASE_REGEX = /:(\d+)/;
+
 // ============ 等级经验表 ============
 let roleLevelConfig = null;
 let levelExpTable = null;  // 累计经验表，索引为等级
@@ -24,7 +29,7 @@ const seedAssetImageMap = new Map(); // asset_name (Crop_xxx) -> image url
 
 // ============ 热重载相关 ============
 let configWatcher = null;
-let watcherCallbacks = new Set();
+const watcherCallbacks = new Set();
 const CONFIG_FILES = ['RoleLevel.json', 'Plant.json', 'ItemInfo.json'];
 
 /**
@@ -192,7 +197,7 @@ function loadConfigs() {
                 const fileUrl = `/game-config/seed_images_named/${encodeURIComponent(file)}`;
 
                 // 1) id_..._Seed.png 命名，按 id 建立映射
-                const byId = filename.match(/^(\d+)_.*\.(?:png|jpg|jpeg|webp|gif)$/i);
+                const byId = filename.match(SEED_IMAGE_BY_ID_REGEX);
                 if (byId) {
                     const seedId = Number(byId[1]) || 0;
                     if (seedId > 0 && !seedImageMap.has(seedId)) {
@@ -201,7 +206,7 @@ function loadConfigs() {
                 }
 
                 // 2) ...Crop_xxx_Seed.png 命名，按 asset_name 建立映射
-                const byAsset = filename.match(/(Crop_\d+)_Seed\.(?:png|jpg|jpeg|webp|gif)$/i);
+                const byAsset = filename.match(SEED_IMAGE_BY_ASSET_REGEX);
                 if (byAsset) {
                     const assetName = byAsset[1];
                     if (assetName && !seedAssetImageMap.has(assetName)) {
@@ -291,7 +296,7 @@ function getPlantGrowTime(plantId) {
     const phases = plant.grow_phases.split(';').filter(p => p);
     const durations = [];
     for (const phase of phases) {
-        const match = phase.match(/:(\d+)/);
+        const match = phase.match(GROW_PHASE_REGEX);
         if (match) {
             durations.push(Number.parseInt(match[1], 10) || 0);
         }

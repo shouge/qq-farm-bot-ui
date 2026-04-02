@@ -1,12 +1,15 @@
 import EventEmitter from 'node:events';
 import { createModuleLogger } from '../../services/logger';
 import type {
-  IRuntimeStateService,
-  WorkerRecord,
-  RuntimeLogEntry,
   AccountLogEntry,
+  IRuntimeStateService,
+  RuntimeLogEntry,
+  WorkerRecord,
 } from '../../domain/ports/IRuntimeStateService';
-import type { Store, ConfigSnapshot, ConfigDelta, LogFilters, WorkerStatus, RawWorkerStatus } from './types';
+import type { ConfigDelta, ConfigSnapshot, LogFilters, RawWorkerStatus, Store, WorkerStatus } from './types';
+
+// Module-level regex to avoid re-compilation
+const WHITESPACE_REGEX = /\s+/;
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -224,7 +227,7 @@ export class RuntimeStateService implements IRuntimeStateService {
       }
     }
 
-    let ops = this.opsPool.pop() || {};
+    const ops = this.opsPool.pop() || {};
     for (const k of this.operationKeys) ops[k] = 0;
     if (srcOps && typeof srcOps === 'object') {
       for (const k of this.operationKeys) {
@@ -271,7 +274,7 @@ export class RuntimeStateService implements IRuntimeStateService {
   filterLogs(list: RuntimeLogEntry[], filters: LogFilters = {}): RuntimeLogEntry[] {
     const f = filters;
     const keyword = String(f.keyword || '').trim().toLowerCase();
-    const keywordTerms = keyword ? keyword.split(/\s+/).filter(Boolean) : [];
+    const keywordTerms = keyword ? keyword.split(WHITESPACE_REGEX).filter(Boolean) : [];
     const tag = String(f.tag || '').trim();
     const moduleName = String(f.module || '').trim();
     const eventName = String(f.event || '').trim();

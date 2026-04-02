@@ -4,12 +4,15 @@
 
 const { getAllPlants, getFruitPrice, getSeedPrice, getItemImageById } = require('../config/gameConfig');
 
+// Module-level regex constant
+const GROW_PHASE_DURATION_REGEX = /:(\d+)$/;
+
 function parseGrowPhaseDurations(growPhases) {
     if (!growPhases) return 0;
     const phases = growPhases.split(';').filter(p => p.length > 0);
     const durations = [];
     for (const phase of phases) {
-        const match = phase.match(/:(\d+)$/);
+        const match = phase.match(GROW_PHASE_DURATION_REGEX);
         if (match) {
             durations.push(Number.parseInt(match[1], 10) || 0);
         }

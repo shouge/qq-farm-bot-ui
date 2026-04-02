@@ -1,11 +1,13 @@
-import { toNum, toTimeSec, getServerTimeSec, sleep } from '../../utils/utils';
+import { getServerTimeSec, sleep, toNum, toTimeSec } from '../../utils/utils';
 import type { ILogger } from '../../domain/ports/ILogger';
 import type { IScheduler } from '../../domain/ports/IScheduler';
-import { LandEntity, type PlantData, type PlantPhaseInfo } from '../../domain/entities';
-import { ProtocolFacade, type AllLandsReply } from '../../infrastructure/network/ProtocolFacade';
+import { LandEntity   } from '../../domain/entities';
+import type {PlantData, PlantPhaseInfo} from '../../domain/entities';
+import {  ProtocolFacade } from '../../infrastructure/network/ProtocolFacade';
+import type {AllLandsReply} from '../../infrastructure/network/ProtocolFacade';
 import type { INetworkClient } from '../../domain/ports/INetworkClient';
 import type { AutomationConfig } from '../../domain/value-objects/AutomationConfig';
-import { ItemId, LandType, FertilizerReason } from '../../domain/enums';
+import { FertilizerReason, ItemId, LandType } from '../../domain/enums';
 import { PlantPhase } from '../../config/config';
 
 const ALL_FERTILIZER_LAND_TYPES = [LandType.GOLD, LandType.BLACK, LandType.RED, LandType.NORMAL] as const;
@@ -43,7 +45,6 @@ export class FertilizerService {
     const reasonLabel = reason === FertilizerReason.MULTI_SEASON ? '多季补肥' : '常规施肥';
     const eventName = reason === 'multi_season' ? '多季补肥' : 'fertilize';
     const selectedLandTypes = this.normalizeFertilizerLandTypes(automation.fertilizer_land_types);
-    const selectedLandTypeNames = this.formatFertilizerLandTypes(selectedLandTypes);
     const planted = [...new Set((plantedLands || []).map((v) => toNum(v)).filter(Boolean))];
 
     if (selectedLandTypes.length === 0) {
@@ -232,7 +233,7 @@ export class FertilizerService {
       if (!currentPhase) continue;
       if (currentPhase.phase === PlantPhase.UNKNOWN) continue;
 
-      if (Object.prototype.hasOwnProperty.call(land.plant, 'left_inorc_fert_times')) {
+      if (Object.hasOwn(land.plant, 'left_inorc_fert_times')) {
         const leftTimes = toNum(land.plant.left_inorc_fert_times);
         if (leftTimes <= 0) continue;
       }

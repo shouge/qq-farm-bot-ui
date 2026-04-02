@@ -8,6 +8,11 @@ const { CookieUtils, HashUtils } = require('../utils/qrutils');
 
 const ChromeUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+// Module-level regex constants
+const PTUI_CB_REGEX = /ptuiCB\((.+)\)/;
+const SINGLE_QUOTED_STRING_REGEX = /'([^']*)'/g;
+const HTTP_SCHEME_REGEX = /^https?:\/\//i;
+
 class QRLoginSession {
     static Presets = {
         vip: {
@@ -95,16 +100,14 @@ class QRLoginSession {
             });
 
             const text = response.data;
-            const matcher = /ptuiCB\((.+)\)/;
-            const match = text.match(matcher);
+            const match = text.match(PTUI_CB_REGEX);
 
             if (!match) {
                 throw new Error('Invalid response format');
             }
 
             const args = [];
-            const argMatcher = /'([^']*)'/g;
-            for (let argMatch = argMatcher.exec(match[1]); argMatch !== null; argMatch = argMatcher.exec(match[1])) {
+            for (let argMatch = SINGLE_QUOTED_STRING_REGEX.exec(match[1]); argMatch !== null; argMatch = SINGLE_QUOTED_STRING_REGEX.exec(match[1])) {
                 args.push(argMatch[1]);
             }
 
@@ -140,7 +143,7 @@ class MiniProgramLoginSession {
     static normalizeApiDomain(input) {
         const raw = String(input || '').trim();
         if (!raw) return this.DEFAULT_API_DOMAIN;
-        const normalized = /^https?:\/\//i.test(raw) ? raw : (`https://${raw}`);
+        const normalized = HTTP_SCHEME_REGEX.test(raw) ? raw : (`https://${raw}`);
         try {
             const parsed = new URL(normalized);
             return String(parsed.host || '').trim() || this.DEFAULT_API_DOMAIN;

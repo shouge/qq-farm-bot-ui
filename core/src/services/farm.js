@@ -327,7 +327,7 @@ function getOrganicFertilizerTargetsFromLands(lands) {
         if (currentPhase.phase === PlantPhase.DEAD) continue;
 
         // 服务端有该字段时，<=0 说明该地当前不能再施有机肥
-        if (Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+        if (Object.hasOwn(plant, 'left_inorc_fert_times')) {
             const leftTimes = toNum(plant.left_inorc_fert_times);
             if (leftTimes <= 0) continue;
         }
@@ -842,8 +842,8 @@ async function getAvailableSeeds() {
         }));
     }
     return list.sort((a, b) => {
-        const av = (a.requiredLevel === null || a.requiredLevel === undefined) ? 9999 : a.requiredLevel;
-        const bv = (b.requiredLevel === null || b.requiredLevel === undefined) ? 9999 : b.requiredLevel;
+        const av = a.requiredLevel ?? 9999;
+        const bv = b.requiredLevel ?? 9999;
         return av - bv;
     });
 }

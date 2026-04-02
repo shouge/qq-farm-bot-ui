@@ -1,5 +1,5 @@
 import type { IPanelDataProvider } from '../../domain/ports/IPanelDataProvider';
-import type { ILogRepository, LogQueryOptions, PaginatedLogs } from '../../domain/ports/ILogRepository';
+import type { ILogRepository, PaginatedLogs } from '../../domain/ports/ILogRepository';
 import type { IWorkerProcessManager } from '../../domain/ports/IWorkerProcessManager';
 import type { IRuntimeStateService } from '../../domain/ports/IRuntimeStateService';
 import { findAccountByRef, normalizeAccountRef, resolveAccountId as resolveAccountIdByList } from '../../services/account-resolver';
@@ -231,8 +231,8 @@ export class PanelDataProvider implements IPanelDataProvider, ILogRepository {
   getSchedulerStatus(accountRef: string): Promise<any> {
     const accountId = this.resolveAccountRefId(accountRef);
     const runtime = getSchedulerRegistrySnapshot();
-    let worker: any = null;
-    let workerError = '';
+    const worker: any = null;
+    const workerError = '';
 
     if (!accountId) {
       return Promise.resolve({ accountId: '', runtime, worker, workerError });

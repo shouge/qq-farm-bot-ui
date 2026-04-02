@@ -1,7 +1,7 @@
 import QRCode from 'qrcode';
 import { sleep } from '../../utils/utils';
 import type { IWorkerProcessManager } from '../../domain/ports/IWorkerProcessManager';
-import { FARM_APP_ID, DEFAULT_QQ_LOGIN_DOMAIN, OFFLINE_REMINDER_MAX_ROUNDS, RELogin_QRCode_WIDTH } from '../../domain/constants';
+import { DEFAULT_QQ_LOGIN_DOMAIN, FARM_APP_ID, OFFLINE_REMINDER_MAX_ROUNDS, RELogin_QRCode_WIDTH } from '../../domain/constants';
 
 export interface PushooMessageOptions {
   channel: string;
@@ -124,7 +124,7 @@ export class ReloginReminderService {
       uin: uin || '',
       avatar,
     });
-    const newAcc = (created?.accounts || [])[(created?.accounts || []).length - 1];
+    const newAcc = created?.accounts?.at(-1);
     if (newAcc) {
       this.workerManager.startWorker(newAcc);
       this.opts.addAccountLog('add', `重登录成功，已新增账号: ${newAcc.name}`, newAcc.id, newAcc.name, { reason: 'relogin' });

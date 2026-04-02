@@ -9,8 +9,8 @@ export interface DailyRoutineResult {
 
 export interface IDailyRoutine {
   readonly key: string;
-  isEnabled(config: AutomationConfig): boolean;
-  perform(): Promise<DailyRoutineResult>;
+  isEnabled: (config: AutomationConfig) => boolean;
+  perform: () => Promise<DailyRoutineResult>;
 }
 
 export class DailyRoutineOrchestrator {

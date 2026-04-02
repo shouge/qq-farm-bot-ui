@@ -1,11 +1,11 @@
-import { getInteractRecords, extractFriendsFromInteractRecords } from '../../services/interact';
+import { extractFriendsFromInteractRecords, getInteractRecords } from '../../services/interact';
 import { getBagDetail, getBagSeeds } from '../../services/warehouse';
 import { getPlantRankings } from '../../services/analytics';
 import { getSchedulerRegistrySnapshot } from '../../services/scheduler';
 import {
-  getTaskDailyStateLikeApp,
   getGrowthTaskStateLikeApp,
   getTaskClaimDailyState,
+  getTaskDailyStateLikeApp,
 } from '../../services/task';
 import { getEmailDailyState } from '../../services/email';
 import { getFreeGiftDailyState } from '../../services/mall';
@@ -87,8 +87,8 @@ async function getDailyGiftOverview(): Promise<any> {
         enabled: !!auto.vip_gift,
         doneToday: !!vip.doneToday,
         lastAt: Number(vip.lastClaimAt || (vip as any).lastCheckAt || 0),
-        hasGift: Object.prototype.hasOwnProperty.call(vip, 'hasGift') ? !!vip.hasGift : undefined,
-        canClaim: Object.prototype.hasOwnProperty.call(vip, 'canClaim') ? !!vip.canClaim : undefined,
+        hasGift: Object.hasOwn(vip, 'hasGift') ? !!vip.hasGift : undefined,
+        canClaim: Object.hasOwn(vip, 'canClaim') ? !!vip.canClaim : undefined,
         result: (vip as any).result || '',
       },
       {

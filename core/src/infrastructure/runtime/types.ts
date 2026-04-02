@@ -3,19 +3,19 @@
  * This allows RuntimeStateService to have typed access to store functions
  */
 export interface Store {
-  getAutomation(accountId?: string): Record<string, boolean>;
-  getPlantingStrategy(accountId?: string): string;
-  getPreferredSeed(accountId?: string): number | null;
-  getIntervals(accountId?: string): Record<string, number>;
-  getFriendBlockLevel(accountId?: string): number;
-  getFriendQuietHours(accountId?: string): { start: number; end: number };
-  getFriendBlacklist(accountId?: string): number[];
-  getFriendCache(accountId?: string): Array<{ gid: number; name: string }>;
-  getRuntimeClientConfig?(): Record<string, unknown> | null;
-  getAccounts(): { accounts: Account[] };
-  addOrUpdateAccount(account: Partial<Account>): { accounts: Account[] };
-  deleteAccount(id: string): void;
-  setFriendBlacklist?(accountId: string, list: number[]): void;
+  getAutomation: (accountId?: string) => Record<string, boolean>;
+  getPlantingStrategy: (accountId?: string) => string;
+  getPreferredSeed: (accountId?: string) => number | null;
+  getIntervals: (accountId?: string) => Record<string, number>;
+  getFriendBlockLevel: (accountId?: string) => number;
+  getFriendQuietHours: (accountId?: string) => { start: number; end: number };
+  getFriendBlacklist: (accountId?: string) => number[];
+  getFriendCache: (accountId?: string) => Array<{ gid: number; name: string }>;
+  getRuntimeClientConfig?: () => Record<string, unknown> | null;
+  getAccounts: () => { accounts: Account[] };
+  addOrUpdateAccount: (account: Partial<Account>) => { accounts: Account[] };
+  deleteAccount: (id: string) => void;
+  setFriendBlacklist?: (accountId: string, list: number[]) => void;
 }
 
 export interface Account {

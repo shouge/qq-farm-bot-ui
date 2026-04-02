@@ -7,19 +7,19 @@ import { JsonAccountRepository } from '../infrastructure/persistence/JsonAccount
 import {
   BotLifecycleService,
   ConfigSynchronizer,
-  FarmService,
-  FriendService,
   DailyRoutineOrchestrator,
-  TickScheduler,
-  StatusReporter,
-  PlantingOrchestrator,
+  FarmService,
   FertilizerService,
+  FriendService,
+  PlantingOrchestrator,
+  StatusReporter,
+  TickScheduler,
 } from '../application/services';
 import { WorkerMessageDispatcher } from '../interface/worker/WorkerMessageDispatcher';
 import { HighestLevelStrategy } from '../application/strategies';
 
 export function createWorkerDispatcher(): WorkerMessageDispatcher {
-  const accountId = resolveAccountId();
+  const _accountId = resolveAccountId();
   const loggerFactory = new WinstonLoggerFactory();
   const logger = loggerFactory.create('worker');
 

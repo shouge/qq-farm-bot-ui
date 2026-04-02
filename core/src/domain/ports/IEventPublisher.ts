@@ -7,17 +7,17 @@ export interface IEventPublisher {
   /**
    * Publish an event to all connected clients
    */
-  publish(event: string, data: unknown): void;
+  publish: (event: string, data: unknown) => void;
 
   /**
    * Publish an event to a specific room/namespace
    */
-  publishTo(room: string, event: string, data: unknown): void;
+  publishTo: (room: string, event: string, data: unknown) => void;
 
   /**
    * Check if the publisher is ready to accept events
    */
-  isReady(): boolean;
+  isReady: () => boolean;
 }
 
 /**

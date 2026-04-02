@@ -19,7 +19,7 @@ export interface PaginatedLogs {
 }
 
 export interface ILogRepository {
-  getLogs(accountId: string, options: LogQueryOptions): any[] | PaginatedLogs;
-  clearLogs(accountId: string): any;
-  getAccountLogs(limit?: number): any[];
+  getLogs: (accountId: string, options: LogQueryOptions) => any[] | PaginatedLogs;
+  clearLogs: (accountId: string) => any;
+  getAccountLogs: (limit?: number) => any[];
 }

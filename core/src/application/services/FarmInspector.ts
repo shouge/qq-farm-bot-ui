@@ -1,7 +1,7 @@
-import { CONFIG, PlantPhase, PHASE_NAMES } from '../../config/config';
-import { getPlantName, getPlantExp } from '../../config/gameConfig';
-import { toNum, toTimeSec, getServerTimeSec } from '../../utils/utils';
-import type { LandEntity, PlantData, PlantPhaseInfo } from '../../domain/entities';
+import { PHASE_NAMES, PlantPhase } from '../../config/config';
+import { getPlantExp, getPlantName } from '../../config/gameConfig';
+import { getServerTimeSec, toTimeSec } from '../../utils/utils';
+import type { LandEntity, PlantPhaseInfo } from '../../domain/entities';
 
 export interface LandAnalysisResult {
   harvestable: number[];
@@ -32,7 +32,6 @@ export class FarmInspector {
     };
 
     const nowSec = getServerTimeSec();
-    const landsMap = this.buildLandMap(lands);
 
     for (const land of lands) {
       const id = land.id;

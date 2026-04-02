@@ -1,4 +1,4 @@
-import { toNum, getServerTimeSec } from '../../utils/utils';
+import { getServerTimeSec, toNum } from '../../utils/utils';
 
 export interface OperationLimit {
   id: number;

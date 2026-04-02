@@ -2,6 +2,9 @@
  * QR Login Utilities
  */
 
+// Module-level regex constants
+const UIN_PREFIX_REGEX = /^o0*/;
+
 class CookieUtils {
     static #keyRegexCache = new Map();
 
@@ -29,7 +32,7 @@ class CookieUtils {
     static getUin(cookies) {
         const uin = this.getValue(cookies, 'wxuin') || this.getValue(cookies, 'uin') || this.getValue(cookies, 'ptui_loginuin');
         if (!uin) return null;
-        return uin.replace(/^o0*/, '');
+        return uin.replace(UIN_PREFIX_REGEX, '');
     }
 }
 

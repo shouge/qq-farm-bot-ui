@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import type { IAccountRepository, Account } from '../../../domain/ports/IAccountRepository';
+import type { IAccountRepository } from '../../../domain/ports/IAccountRepository';
 import type { IPanelDataProvider } from '../../../domain/ports/IPanelDataProvider';
 
 export class AccountController {
@@ -42,7 +42,7 @@ export class AccountController {
       }
 
       const data = this.repo.addOrUpdate(payload);
-      const accountId = isUpdate ? String(payload.id) : String((data.accounts[data.accounts.length - 1] || {}).id || '');
+      const accountId = isUpdate ? String(payload.id) : String((data.accounts.at(-1) || {}).id || '');
       const accountName = payload.name || '';
 
       if (this.provider) {
@@ -56,7 +56,7 @@ export class AccountController {
 
       if (!isUpdate && this.provider) {
         // Auto-start new account
-        const newAcc = data.accounts[data.accounts.length - 1];
+        const newAcc = data.accounts.at(-1);
         if (newAcc) this.provider.startAccount(newAcc.id);
       } else if (wasRunning && !onlyRemarkChanged && this.provider) {
         this.provider.restartAccount(payload.id);

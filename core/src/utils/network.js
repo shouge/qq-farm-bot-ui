@@ -14,6 +14,9 @@ const { types } = require('./proto');
 const { toLong, toNum, syncServerTime, log, logWarn } = require('./utils');
 const cryptoWasm = require('./crypto-wasm');
 
+// Module-level regex constant
+const WS_ERROR_RESPONSE_REGEX = /Unexpected server response:\s*(\d+)/i;
+
 // ============ 事件发射器 (用于推送通知) ============
 const networkEvents = new EventEmitter();
 
@@ -57,7 +60,7 @@ function clearWsErrorState() {
     wsErrorState = { code: 0, at: 0, message: '' };
 }
 function hasOwn(obj, key) {
-    return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+    return !!obj && Object.hasOwn(obj, key);
 }
 
 // ============ 消息编解码 ============
@@ -510,7 +513,7 @@ function connect(code, onLoginSuccess) {
     ws.on('error', (err) => {
         const message = err && err.message ? String(err.message) : '';
         logWarn('系统', `[WS] 错误: ${message}`);
-        const match = message.match(/Unexpected server response:\s*(\d+)/i);
+        const match = message.match(WS_ERROR_RESPONSE_REGEX);
         if (match) {
             const code = Number.parseInt(match[1], 10) || 0;
             if (code) {

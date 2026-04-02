@@ -1,5 +1,5 @@
 import EventEmitter from 'node:events';
-import type { IEventBus, EventHandler } from '../../domain/ports/IEventBus';
+import type { EventHandler, IEventBus } from '../../domain/ports/IEventBus';
 
 export class TypedEventEmitter implements IEventBus {
   private readonly emitter = new EventEmitter();

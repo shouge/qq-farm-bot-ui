@@ -10,5 +10,5 @@ export interface SeedInfo {
 }
 
 export interface ISeedSelectionStrategy {
-  selectSeed(availableSeeds: SeedInfo[], state: UserStateSnapshot): SeedInfo | null;
+  selectSeed: (availableSeeds: SeedInfo[], state: UserStateSnapshot) => SeedInfo | null;
 }

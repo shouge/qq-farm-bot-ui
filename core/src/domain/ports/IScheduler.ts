@@ -16,20 +16,20 @@ export interface SchedulerSnapshot {
 }
 
 export interface IScheduler {
-  setTimeout(
+  setTimeout: (
     taskName: string,
     delayMs: number,
     taskFn: () => void | Promise<void>,
     options?: { preventOverlap?: boolean }
-  ): void;
-  setInterval(
+  ) => void;
+  setInterval: (
     taskName: string,
     intervalMs: number,
     taskFn: () => void | Promise<void>,
     options?: { preventOverlap?: boolean; runImmediately?: boolean }
-  ): void;
-  clear(taskName: string): boolean;
-  clearAll(): void;
-  has(taskName: string): boolean;
-  getSnapshot(): SchedulerSnapshot;
+  ) => void;
+  clear: (taskName: string) => boolean;
+  clearAll: () => void;
+  has: (taskName: string) => boolean;
+  getSnapshot: () => SchedulerSnapshot;
 }

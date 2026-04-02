@@ -13,11 +13,13 @@ try {
 }
 
 const SENSITIVE_KEY_RE = /code|token|password|passwd|auth|ticket|cookie|session/i;
+const REDACT_URL_PARAM_RE = /([?&](?:code|token|ticket|password)=)[^&\s]+/gi;
+const REDACT_BEARER_RE = /(Bearer\s+)[\w.-]+/gi;
 
 function redactString(input) {
     let text = String(input || '');
-    text = text.replace(/([?&](?:code|token|ticket|password)=)[^&\s]+/gi, '$1[REDACTED]');
-    text = text.replace(/(Bearer\s+)[\w.-]+/gi, '$1[REDACTED]');
+    text = text.replace(REDACT_URL_PARAM_RE, '$1[REDACTED]');
+    text = text.replace(REDACT_BEARER_RE, '$1[REDACTED]');
     return text;
 }
 
@@ -54,7 +56,7 @@ function ensureFallbackLogDir() {
 const LOG_FLUSH_INTERVAL_MS = 100; // 100ms 刷新一次
 const LOG_MAX_BUFFER_SIZE = 100;   // 最多缓冲100条
 
-let logBuffer = [];
+const logBuffer = [];
 let flushTimer = null;
 let isFlushing = false;
 

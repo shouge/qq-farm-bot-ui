@@ -46,7 +46,7 @@ class TimerNode {
 class TimeWheel {
     constructor(size) {
         this.size = size;
-        this.buckets = Array.from({ length: size }, () => []);
+        this.buckets = Array.from({length: size}).fill([]);
         this.currentIndex = 0;
         // Map 索引: taskName -> { bucketIndex, node }，实现 O(1) 查找
         this.taskIndex = new Map();
@@ -288,7 +288,7 @@ class Scheduler {
      * @param {string} taskName - 任务名称
      * @param {number} delayMs - 延迟时间(毫秒)
      * @param {Function} taskFn - 任务函数
-     * @param {Object} options - 选项
+     * @param {object} options - 选项
      * @returns {TimerNode|undefined}
      */
     setTimeoutTask(taskName, delayMs, taskFn, options = {}) {
@@ -325,7 +325,7 @@ class Scheduler {
      * @param {string} taskName - 任务名称
      * @param {number} intervalMs - 间隔时间(毫秒)
      * @param {Function} taskFn - 任务函数
-     * @param {Object} options - 选项
+     * @param {object} options - 选项
      * @param {boolean} options.preventOverlap - 是否防止重叠执行
      * @param {boolean} options.runImmediately - 是否立即执行
      * @returns {TimerNode|undefined}
@@ -442,7 +442,7 @@ class Scheduler {
 
     /**
      * 获取调度器快照 - O(n)，但只遍历实际任务
-     * @returns {Object}
+     * @returns {object}
      */
     getSnapshot() {
         const tasks = [];
@@ -487,7 +487,7 @@ class Scheduler {
 
     /**
      * 获取统计信息
-     * @returns {Object}
+     * @returns {object}
      */
     getStats() {
         return {
@@ -521,7 +521,7 @@ function normalizeTaskSnapshot(taskName, meta) {
  * 创建或获取调度器实例
  * 相同 namespace 的调度器会被复用
  * @param {string} namespace - 命名空间
- * @param {Object} config - 配置选项
+ * @param {object} config - 配置选项
  * @returns {Scheduler}
  */
 function createScheduler(namespace = 'default', config = {}) {
@@ -554,7 +554,7 @@ function getScheduler(namespace) {
 /**
  * 获取全局调度器注册表快照
  * @param {string} namespaceFilter - 可选的命名空间过滤器
- * @returns {Object}
+ * @returns {object}
  */
 function getSchedulerRegistrySnapshot(namespaceFilter = '') {
     const ns = String(namespaceFilter || '').trim();
@@ -593,7 +593,7 @@ function stopScheduler(namespace) {
  * 停止所有调度器
  */
 function stopAllSchedulers() {
-    for (const [name, scheduler] of schedulerRegistry.entries()) {
+    for (const [, scheduler] of schedulerRegistry.entries()) {
         scheduler.stop();
     }
     schedulerRegistry.clear();

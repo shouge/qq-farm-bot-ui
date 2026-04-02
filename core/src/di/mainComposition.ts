@@ -3,7 +3,6 @@ import path from 'node:path';
 import { AdminServer } from '../interface/http/AdminServer';
 import { RuntimeEngine } from '../infrastructure/runtime/RuntimeEngine';
 import { JsonAccountRepository } from '../infrastructure/persistence/JsonAccountRepository';
-import { SocketIOEventPublisher } from '../infrastructure/event/SocketIOEventPublisher';
 import { createAuthRouter } from '../interface/http/routers/authRouter';
 import { createAdminRouter } from '../interface/http/routers/adminRouter';
 import { createAccountRouter } from '../interface/http/routers/accountRouter';
@@ -19,12 +18,12 @@ import { createModuleLogger } from '../services/logger';
 import * as store from '../models/store';
 
 export interface BridgedRuntime {
-  start(options?: { startAdminServer?: boolean; autoStartAccounts?: boolean }): Promise<void>;
-  stopAllAccounts(): void;
+  start: (options?: { startAdminServer?: boolean; autoStartAccounts?: boolean }) => Promise<void>;
+  stopAllAccounts: () => void;
 }
 
 export function createBridgedRuntime(options: { mainEntryPath: string }): BridgedRuntime {
-  const mainLogger = createModuleLogger('main');
+  const _mainLogger = createModuleLogger('main');
 
   const configRepo = new JsonAccountRepository();
 

@@ -257,24 +257,6 @@ function normalizeFriendCache(input) {
     return validateFriendCache(input);
 }
 
-function mergeFriendCache(existing, newItems) {
-    const merged = normalizeFriendCache(existing);
-    const seen = new Set(merged.map(f => f.gid));
-    const toAdd = normalizeFriendCache(newItems);
-    for (const item of toAdd) {
-        if (seen.has(item.gid)) {
-            const idx = merged.findIndex(f => f.gid === item.gid);
-            if (idx >= 0) {
-                merged[idx] = { ...merged[idx], ...item };
-            }
-        } else {
-            seen.add(item.gid);
-            merged.push(item);
-        }
-    }
-    return merged;
-}
-
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     return validateAccountConfig(base, DEFAULT_ACCOUNT_CONFIG);
 }
@@ -569,11 +551,6 @@ function setPlantingStrategy(accountId, strategy) {
 
 function getIntervals(accountId) {
     return { ...getAccountConfigSnapshot(accountId).intervals };
-}
-
-function normalizeIntervals(intervals) {
-    const { validateIntervals: schemaValidateIntervals } = require('../utils/config-schema');
-    return schemaValidateIntervals(intervals);
 }
 
 function getFriendBlockLevel(accountId) {

@@ -2,10 +2,11 @@ import type { INetworkClient } from '../../domain/ports/INetworkClient';
 import type { IConfigRepository } from '../../domain/ports/IConfigRepository';
 import type { IScheduler } from '../../domain/ports/IScheduler';
 import type { ILogger } from '../../domain/ports/ILogger';
-import { ProtocolFacade, type SyncAllFriendsReply } from '../../infrastructure/network/ProtocolFacade';
+import { ProtocolFacade  } from '../../infrastructure/network/ProtocolFacade';
+import type {SyncAllFriendsReply} from '../../infrastructure/network/ProtocolFacade';
 import { FriendOperationLimiter } from './FriendOperationLimiter';
-import { toNum, sleep } from '../../utils/utils';
-import type { FriendPreview, FriendCandidate } from '../../domain/entities';
+import { sleep, toNum } from '../../utils/utils';
+import type { FriendCandidate, FriendPreview } from '../../domain/entities';
 
 const IDLE_FRIEND_PROBE_BATCH_SIZE = 12;
 const IDLE_FRIEND_PROBE_REDUCED_BATCH_SIZE = 6;
@@ -100,19 +101,16 @@ export class FriendService {
 
       const totalActions = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
       let visitedCount = 0;
-      let probeVisitedCount = 0;
 
       for (const friend of friendsToVisit) {
         try {
           const result = await this.visitFriend(friend, totalActions);
           visitedCount++;
           if (friend.isProbe) {
-            probeVisitedCount++;
             this.markProbeCooldown(friend.gid, result.acted);
           }
         } catch {
           if (friend.isProbe) {
-            probeVisitedCount++;
             this.markProbeCooldown(friend.gid, false);
           }
         }
@@ -154,8 +152,8 @@ export class FriendService {
     return { success: result.acted, opType };
   }
 
-  private async visitFriend(friend: FriendCandidate, totalActions: Record<string, number>): Promise<{ acted: boolean }> {
-    const { gid, name = `GID:${friend.gid}` } = friend;
+  private async visitFriend(friend: FriendCandidate, _totalActions: Record<string, number>): Promise<{ acted: boolean }> {
+    const { gid } = friend;
 
     try {
       const enterReply = await this.protocol.enterFriendFarm(gid);
@@ -166,8 +164,6 @@ export class FriendService {
       }
 
       const actions: string[] = [];
-      const helpEnabled = this.configRepo.isAutomationOn('friend_help');
-      const stopWhenExpLimit = this.configRepo.isAutomationOn('friend_help_exp_limit');
 
       // Help operations simplified
       // Steal
@@ -182,7 +178,7 @@ export class FriendService {
 
       await this.protocol.leaveFriendFarm(gid);
       return { acted: actions.length > 0 };
-    } catch (e) {
+    } catch {
       await this.protocol.leaveFriendFarm(gid).catch(() => null);
       return { acted: false };
     }
@@ -239,7 +235,7 @@ export class FriendService {
     if (!cfg.enabled) return false;
     const [sh, sm] = cfg.start.split(':').map(Number);
     const [eh, em] = cfg.end.split(':').map(Number);
-    if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return false;
+    if (Number.isNaN(sh) || Number.isNaN(sm) || Number.isNaN(eh) || Number.isNaN(em)) return false;
 
     const now = new Date();
     const cur = now.getHours() * 60 + now.getMinutes();

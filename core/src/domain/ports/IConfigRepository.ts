@@ -69,31 +69,31 @@ export interface FullConfigSnapshot {
 }
 
 export interface IConfigRepository {
-  getAutomation(accountId?: string): AutomationConfig;
-  getPlantingStrategy(accountId?: string): PlantingStrategy;
-  getPreferredSeedId(accountId?: string): number;
-  getBagSeedPriority(accountId?: string): any;
-  getIntervals(accountId?: string): IntervalConfig;
-  getFriendBlockLevel(accountId?: string): FriendBlockLevelConfig;
-  getFriendQuietHours(accountId?: string): FriendQuietHoursConfig;
-  getFriendBlacklist(accountId?: string): number[];
-  getFriendCache(accountId?: string): any[];
-  setFriendCache(accountId: string, list: any[]): any[];
-  updateFriendCache(accountId: string, friends: any[]): any[];
-  getConfigSnapshot(accountId?: string): FullConfigSnapshot;
-  applyConfigSnapshot(snapshot: Partial<FullConfigSnapshot>, accountId?: string): void;
-  setAutomation(key: string, value: unknown, accountId?: string): void;
-  isAutomationOn(key: string, accountId?: string): boolean;
+  getAutomation: (accountId?: string) => AutomationConfig;
+  getPlantingStrategy: (accountId?: string) => PlantingStrategy;
+  getPreferredSeedId: (accountId?: string) => number;
+  getBagSeedPriority: (accountId?: string) => any;
+  getIntervals: (accountId?: string) => IntervalConfig;
+  getFriendBlockLevel: (accountId?: string) => FriendBlockLevelConfig;
+  getFriendQuietHours: (accountId?: string) => FriendQuietHoursConfig;
+  getFriendBlacklist: (accountId?: string) => number[];
+  getFriendCache: (accountId?: string) => any[];
+  setFriendCache: (accountId: string, list: any[]) => any[];
+  updateFriendCache: (accountId: string, friends: any[]) => any[];
+  getConfigSnapshot: (accountId?: string) => FullConfigSnapshot;
+  applyConfigSnapshot: (snapshot: Partial<FullConfigSnapshot>, accountId?: string) => void;
+  setAutomation: (key: string, value: unknown, accountId?: string) => void;
+  isAutomationOn: (key: string, accountId?: string) => boolean;
 
-  getUI(): UIPreferences;
-  setUITheme(theme: string): UIPreferences;
+  getUI: () => UIPreferences;
+  setUITheme: (theme: string) => UIPreferences;
 
-  getOfflineReminder(): OfflineReminderConfig;
-  setOfflineReminder(cfg: Partial<OfflineReminderConfig>): OfflineReminderConfig;
+  getOfflineReminder: () => OfflineReminderConfig;
+  setOfflineReminder: (cfg: Partial<OfflineReminderConfig>) => OfflineReminderConfig;
 
-  getQrLoginConfig(): QrLoginConfig;
-  setQrLoginConfig(cfg: Partial<QrLoginConfig>): QrLoginConfig;
+  getQrLoginConfig: () => QrLoginConfig;
+  setQrLoginConfig: (cfg: Partial<QrLoginConfig>) => QrLoginConfig;
 
-  getRuntimeClientConfig(): RuntimeClientConfig;
-  setRuntimeClientConfig(cfg: Partial<RuntimeClientConfig>): RuntimeClientConfig;
+  getRuntimeClientConfig: () => RuntimeClientConfig;
+  setRuntimeClientConfig: (cfg: Partial<RuntimeClientConfig>) => RuntimeClientConfig;
 }

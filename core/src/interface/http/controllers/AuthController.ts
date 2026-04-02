@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { CONFIG } from '../../../config/config';
-import { hashPassword, verifyPassword, recordLoginAttempts, clearLoginAttempts } from '../../../services/security';
+import { clearLoginAttempts, hashPassword, recordLoginAttempts, verifyPassword } from '../../../services/security';
 
 export class AuthController {
   private tokens = new Set<string>();

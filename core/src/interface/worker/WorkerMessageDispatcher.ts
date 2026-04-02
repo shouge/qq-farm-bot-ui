@@ -1,4 +1,4 @@
-import type { WorkerMessage, IWorkerIpc } from '../../domain/ports/IWorkerIpc';
+import type { IWorkerIpc, WorkerMessage } from '../../domain/ports/IWorkerIpc';
 import type { BotLifecycleService, StartBotConfig } from '../../application/services/BotLifecycleService';
 import type { ConfigSynchronizer } from '../../application/services/ConfigSynchronizer';
 import type { ILogger } from '../../domain/ports/ILogger';

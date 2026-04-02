@@ -9,14 +9,13 @@ import type {
 import type { IEventBus } from '../../domain/ports/IEventBus';
 import type { IScheduler } from '../../domain/ports/IScheduler';
 import {
-  connect as legacyConnect,
-  reconnect as legacyReconnect,
   cleanup as legacyCleanup,
-  getWs as legacyGetWs,
-  sendMsgAsync as legacySendMsgAsync,
+  connect as legacyConnect,
   getUserState as legacyGetUserState,
-  getWsErrorState as legacyGetWsErrorState,
+  getWs as legacyGetWs,
   networkEvents as legacyNetworkEvents,
+  reconnect as legacyReconnect,
+  sendMsgAsync as legacySendMsgAsync,
 } from '../../utils/network';
 
 /**

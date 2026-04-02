@@ -18,6 +18,12 @@ const SECURITY_CONFIG = {
     lockoutDuration: 300000,  // 锁定时长(ms) 5分钟
 };
 
+// Module-level regex constants for password strength
+const LOWERCASE_REGEX = /[a-z]/;
+const UPPERCASE_REGEX = /[A-Z]/;
+const DIGIT_REGEX = /\d/;
+const SPECIAL_CHAR_REGEX = /[^a-z0-9]/i;
+
 // 登录尝试记录
 const loginAttempts = new Map();
 
@@ -132,10 +138,10 @@ function checkPasswordStrength(password) {
     if (password.length >= 8) score += 1;
     if (password.length >= 12) score += 1;
 
-    if (/[a-z]/.test(password)) score += 1;
-    if (/[A-Z]/.test(password)) score += 1;
-    if (/\d/.test(password)) score += 1;
-    if (/[^a-z0-9]/i.test(password)) score += 1;
+    if (LOWERCASE_REGEX.test(password)) score += 1;
+    if (UPPERCASE_REGEX.test(password)) score += 1;
+    if (DIGIT_REGEX.test(password)) score += 1;
+    if (SPECIAL_CHAR_REGEX.test(password)) score += 1;
 
     // 检查常见弱密码
     const commonPasswords = [

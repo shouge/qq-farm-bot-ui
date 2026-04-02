@@ -18,8 +18,8 @@ export interface AccountsData {
 }
 
 export interface IAccountRepository {
-  getAccounts(): AccountsData;
-  findById(id: string): Account | undefined;
-  addOrUpdate(account: Partial<Account> & { id?: string }): AccountsData;
-  delete(id: string): AccountsData;
+  getAccounts: () => AccountsData;
+  findById: (id: string) => Account | undefined;
+  addOrUpdate: (account: Partial<Account> & { id?: string }) => AccountsData;
+  delete: (id: string) => AccountsData;
 }

@@ -3,15 +3,14 @@ import type { IConfigRepository } from '../../domain/ports/IConfigRepository';
 import type { IScheduler } from '../../domain/ports/IScheduler';
 import type { ILogger } from '../../domain/ports/ILogger';
 import type { IEventBus } from '../../domain/ports/IEventBus';
-import { ProtocolFacade, type AllLandsReply } from '../../infrastructure/network/ProtocolFacade';
+import {  ProtocolFacade } from '../../infrastructure/network/ProtocolFacade';
+import type {AllLandsReply} from '../../infrastructure/network/ProtocolFacade';
 import { FarmInspector } from './FarmInspector';
 import { PlantingOrchestrator } from './PlantingOrchestrator';
 import { FertilizerService } from './FertilizerService';
-import { getPlantName, getPlantNameBySeedId, getPlantById, getSeedImageBySeedId, getLevelExpProgress } from '../../config/gameConfig';
-import { toNum, toTimeSec, getServerTimeSec, sleep } from '../../utils/utils';
-import { PlantPhase, PHASE_NAMES } from '../../config/config';
+import { sleep, toNum } from '../../utils/utils';
 import { LandEntity } from '../../domain/entities';
-import { ItemId, AutomationFeature, FertilizerReason } from '../../domain/enums';
+import { AutomationFeature, FertilizerReason, ItemId } from '../../domain/enums';
 
 export interface FarmCycleResult {
   hadWork: boolean;
@@ -40,7 +39,6 @@ export class FarmService {
   }
 
   async inspectFarm(): Promise<boolean> {
-    const state = this.protocol;
     // We need to check automation flag first
     // But we don't have direct access to check automation here without configRepo
     if (this.isCheckingFarm) return false;
@@ -132,8 +130,8 @@ export class FarmService {
     if (harvestedLandIds.length > 0 && harvestReply) {
       const landsMap = this.inspector.buildLandMap(lands);
       const firstPass = this.inspector.classifyHarvestedLandsByMap(harvestedLandIds, landsMap);
-      let removable = [...firstPass.removable];
-      let growing = [...firstPass.growing];
+      const removable = [...firstPass.removable];
+      const growing = [...firstPass.growing];
       let unknown = [...firstPass.unknown];
 
       if (unknown.length > 0) {
@@ -264,6 +262,7 @@ export class FarmService {
     if (landsToPlant.length === 0) return;
     // Simplified: delegate to plantingOrchestrator or implement shop planting
     // For now, we leave the detailed implementation as a follow-up since it requires bag seed integration
+    void landsToPlant;
   }
 
   async getLandsDetail(): Promise<Record<string, unknown>> {

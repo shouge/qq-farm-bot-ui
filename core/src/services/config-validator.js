@@ -252,7 +252,7 @@ class ConfigValidator {
             for (const [key, propSchema] of Object.entries(properties)) {
                 const valuePath = path ? `${path}.${key}` : key;
                 
-                if (Object.prototype.hasOwnProperty.call(value, key)) {
+                if (Object.hasOwn(value, key)) {
                     result[key] = this.validateObject(value[key], propSchema, valuePath);
                 } else if (propSchema.default !== undefined) {
                     result[key] = propSchema.default;

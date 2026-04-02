@@ -1,7 +1,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import process from 'node:process';
-import type { IWorkerIpc, WorkerMessage, MasterMessage } from '../../domain/ports/IWorkerIpc';
-import { sendToMaster as legacySendToMaster, onMasterMessage as legacyOnMasterMessage } from '../../utils/ipc';
+import type { IWorkerIpc, MasterMessage, WorkerMessage } from '../../domain/ports/IWorkerIpc';
+import { onMasterMessage as legacyOnMasterMessage, sendToMaster as legacySendToMaster } from '../../utils/ipc';
 
 export class WorkerIpcAdapter implements IWorkerIpc {
   send(message: MasterMessage): void {

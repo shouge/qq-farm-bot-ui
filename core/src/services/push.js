@@ -5,6 +5,10 @@
 const axios = require('axios');
 const pushoo = require('pushoo').default;
 
+// Module-level regex constants
+const PLACEHOLDER_TITLE_RE = /\{\{title\}\}/g;
+const PLACEHOLDER_CONTENT_RE = /\{\{content\}\}/g;
+
 function assertRequiredText(name, value) {
     const text = String(value || '').trim();
     if (!text) {
@@ -69,7 +73,7 @@ async function sendPushooMessage(payload = {}) {
  */
 function _recursiveReplace(obj, title, content) {
     if (typeof obj === 'string') {
-        return obj.replace(/\{\{title\}\}/g, title).replace(/\{\{content\}\}/g, content);
+        return obj.replace(PLACEHOLDER_TITLE_RE, title).replace(PLACEHOLDER_CONTENT_RE, content);
     }
     if (Array.isArray(obj)) {
         return obj.map(item => _recursiveReplace(item, title, content));

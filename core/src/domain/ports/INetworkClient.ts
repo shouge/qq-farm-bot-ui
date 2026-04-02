@@ -37,17 +37,17 @@ export type NetworkEvent =
 export type NetworkEventHandler = (payload: unknown) => void;
 
 export interface INetworkClient {
-  connect(code: string, onLoginSuccess?: () => void): void;
-  reconnect(newCode?: string): void;
-  disconnect(): void;
-  sendAsync(
+  connect: (code: string, onLoginSuccess?: () => void) => void;
+  reconnect: (newCode?: string) => void;
+  disconnect: () => void;
+  sendAsync: (
     serviceName: string,
     methodName: string,
     bodyBytes: Buffer,
     timeout?: number
-  ): Promise<SendResult>;
-  getUserState(): Readonly<UserStateSnapshot>;
-  isConnected(): boolean;
-  onEvent(event: NetworkEvent, handler: NetworkEventHandler): void;
-  offEvent(event: NetworkEvent, handler: NetworkEventHandler): void;
+  ) => Promise<SendResult>;
+  getUserState: () => Readonly<UserStateSnapshot>;
+  isConnected: () => boolean;
+  onEvent: (event: NetworkEvent, handler: NetworkEventHandler) => void;
+  offEvent: (event: NetworkEvent, handler: NetworkEventHandler) => void;
 }

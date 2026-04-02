@@ -15,6 +15,11 @@ const SCHEMA_TYPES = {
     TIME_STRING: 'timeString',
 };
 
+// Module-level regex constants
+const TIME_STRING_REGEX = /^(\d{1,2}):(\d{1,2})$/;
+const HTTP_SCHEME_REGEX = /^https?:\/\//i;
+const TRAILING_SLASH_REGEX = /\/$/;
+
 // 允许的配置值集合
 const ALLOWED_VALUES = {
     fertilizer: new Set(['both', 'normal', 'organic', 'none']),
@@ -103,7 +108,7 @@ const validators = {
 
     [SCHEMA_TYPES.TIME_STRING]: (value, defaultValue) => {
         const s = String(value ?? '').trim();
-        const m = s.match(/^(\d{1,2}):(\d{1,2})$/);
+        const m = s.match(TIME_STRING_REGEX);
         if (!m) return defaultValue;
         const hh = Math.max(0, Math.min(23, Number.parseInt(m[1], 10)));
         const mm = Math.max(0, Math.min(59, Number.parseInt(m[2], 10)));
@@ -229,7 +234,7 @@ const qrLoginSchema = {
         validator: (v) => {
             const raw = String(v || '').trim();
             if (!raw) return 'q.qq.com';
-            const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+            const normalized = HTTP_SCHEME_REGEX.test(raw) ? raw : `https://${raw}`;
             try {
                 const parsed = new URL(normalized);
                 return parsed.host || 'q.qq.com';
@@ -252,7 +257,7 @@ const runtimeClientSchema = {
                 const parsed = new URL(raw);
                 const protocol = String(parsed.protocol || '').toLowerCase();
                 if (protocol !== 'ws:' && protocol !== 'wss:') return defaultValue;
-                return parsed.toString().replace(/\/$/, '');
+                return parsed.toString().replace(TRAILING_SLASH_REGEX, '');
             } catch {
                 return defaultValue;
             }
@@ -474,8 +479,8 @@ function validateFriendCacheItem(item) {
 
 /**
  * 校验好友缓存列表
- * @param {array} input 输入列表
- * @returns {array} 校验后的列表
+ * @param {Array} input 输入列表
+ * @returns {Array} 校验后的列表
  */
 function validateFriendCache(input) {
     if (!Array.isArray(input)) return [];

@@ -16,6 +16,6 @@ export type MasterMessage =
   | { type: 'friend_blacklist_add'; gid: number };
 
 export interface IWorkerIpc {
-  send(message: MasterMessage): void;
-  onMessage(handler: (msg: WorkerMessage) => void | Promise<void>): void;
+  send: (message: MasterMessage) => void;
+  onMessage: (handler: (msg: WorkerMessage) => void | Promise<void>) => void;
 }

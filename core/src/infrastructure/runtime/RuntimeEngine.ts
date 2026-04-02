@@ -1,5 +1,3 @@
-import process from 'node:process';
-import path from 'node:path';
 import type { IEventPublisher } from '../../domain/ports/IEventPublisher';
 import { RuntimeStateService } from './RuntimeStateService';
 import { WorkerProcessManager } from './WorkerProcessManager';
@@ -9,6 +7,9 @@ import { MiniProgramLoginSession } from '../../services/qrlogin';
 import { sendPushooMessage } from '../../services/push';
 import { FarmOperationType } from '../../domain/enums';
 import * as store from '../../models/store';
+
+// Import types for event handlers
+import type { AccountLogEntry, RuntimeLogEntry } from '../../domain/ports/IRuntimeStateService';
 
 const OPERATION_KEYS = [
   FarmOperationType.HARVEST,
@@ -167,6 +168,3 @@ export class RuntimeEngine {
     this.eventPublisher = publisher;
   }
 }
-
-// Import types for event handlers
-import type { RuntimeLogEntry, AccountLogEntry } from '../../domain/ports/IRuntimeStateService';
