@@ -9,7 +9,7 @@ export class WorkerIpcAdapter implements IWorkerIpc {
   }
 
   onMessage(handler: (msg: WorkerMessage) => void | Promise<void>): void {
-    legacyOnMasterMessage(async (msg: Record<string, unknown>) => {
+    legacyOnMasterMessage(async (msg: unknown) => {
       await handler(msg as WorkerMessage);
     });
   }
