@@ -6,12 +6,44 @@ import type { IRuntimeStateService } from '../../domain/ports/IRuntimeStateServi
 import { createScheduler } from '../../services/scheduler';
 import { WORKER_API_TIMEOUT_MS, WORKER_FORCE_KILL_DELAY_MS, WORKER_RESTART_FALLBACK_MS } from '../../domain/constants';
 
+/**
+ * IWorkerProcess defines the common interface for child processes and worker threads.
+ * This abstraction allows uniform handling of both runtime modes.
+ */
+interface IWorkerProcess {
+  send?(message: unknown): void;
+  kill?(): void;
+  on?(event: 'message', listener: (msg: unknown) => void): void;
+  on?(event: 'error', listener: (err: Error) => void): void;
+  on?(event: 'exit', listener: (code: number | null, signal: string | null) => void): void;
+  once?(event: 'exit', listener: (code: number | null, signal: string | null) => void): void;
+}
+
 export type WorkerProcess = ChildProcess | WorkerThread;
+
+export interface WorkerStatus {
+  connection?: { connected: boolean };
+  status?: { name?: string; level?: number; gold?: number; exp?: number; platform?: string };
+  operations?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+export interface WorkerLogEntry {
+  time: string;
+  msg: string;
+  tag: string;
+  meta?: Record<string, unknown>;
+  accountId?: string;
+  accountName?: string;
+  ts: number;
+  _searchText?: string;
+  isWarn?: boolean;
+}
 
 export interface WorkerRecord {
   process: WorkerProcess;
-  status: any;
-  logs: any[];
+  status: WorkerStatus | null;
+  logs: WorkerLogEntry[];
   requests: Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>;
   reqId: number;
   name: string;
@@ -29,12 +61,12 @@ export interface WorkerProcessManagerOptions {
   runtimeState: IRuntimeStateService;
   getOfflineAutoDeleteMs: () => number;
   triggerOfflineReminder: (payload: { accountId?: string; accountName?: string; reason?: string; offlineMs?: number }) => void;
-  addOrUpdateAccount: (account: unknown) => unknown;
+  addOrUpdateAccount: (account: { id?: string; nick?: string }) => unknown;
   deleteAccount: (id: string) => unknown;
   upsertFriendBlacklist: (accountId: string, gid: number) => boolean;
   broadcastConfigToWorkers: (accountId?: string) => void;
-  onStatusSync?: (accountId: string, status: unknown, accountName: string) => void;
-  onWorkerLog?: (entry: unknown, accountId: string, accountName: string) => void;
+  onStatusSync?: (accountId: string, status: WorkerStatus | null, accountName: string) => void;
+  onWorkerLog?: (entry: WorkerLogEntry, accountId: string, accountName: string) => void;
 }
 
 interface WorkerMessage {
@@ -47,6 +79,37 @@ interface WorkerMessage {
   gid?: number;
   id?: number;
   result?: unknown;
+}
+
+/**
+ * Type guard to check if a process is a ChildProcess
+ */
+function isChildProcess(proc: WorkerProcess): proc is ChildProcess {
+  return 'send' in proc && typeof (proc as ChildProcess).send === 'function';
+}
+
+/**
+ * Safely send a message to a worker process
+ */
+function sendToWorker(proc: WorkerProcess, message: Record<string, unknown>): void {
+  if (isChildProcess(proc)) {
+    proc.send?.(message);
+  } else {
+    // WorkerThread uses postMessage
+    (proc as WorkerThread).postMessage(message);
+  }
+}
+
+/**
+ * Safely kill a worker process
+ */
+function killWorker(proc: WorkerProcess): void {
+  if (isChildProcess(proc)) {
+    proc.kill?.();
+  } else {
+    // WorkerThread uses terminate
+    void (proc as WorkerThread).terminate();
+  }
 }
 
 export class WorkerProcessManager implements IWorkerProcessManager {
@@ -90,14 +153,16 @@ export class WorkerProcessManager implements IWorkerProcessManager {
     };
     workers[account.id] = worker;
 
-    (child as any).send?.({ type: 'start', config: { code: account.code, platform: account.platform } });
-    (child as any).send?.({ type: 'config_sync', config: this.opts.runtimeState.buildConfigSnapshotForAccount(account.id) });
+    sendToWorker(child, { type: 'start', config: { code: account.code, platform: account.platform } });
+    sendToWorker(child, { type: 'config_sync', config: this.opts.runtimeState.buildConfigSnapshotForAccount(account.id) });
 
-    child.on?.('message', (msg: WorkerMessage) => this.handleWorkerMessage(account.id, msg));
-    child.on?.('error', (err: Error) => {
+    // Type-safe event handler attachment
+    const proc = child as IWorkerProcess;
+    proc.on?.('message', (msg: unknown) => this.handleWorkerMessage(account.id, msg as WorkerMessage));
+    proc.on?.('error', (err: Error) => {
       runtimeState.log('系统', `账号 ${account.name} 子进程启动失败: ${err?.message || err}`, { accountId: String(account.id), accountName: account.name });
     });
-    child.on?.('exit', (code: number | null, signal: string | null) => {
+    proc.on?.('exit', (code: number | null, signal: string | null) => {
       const current = workers[account.id];
       const displayName = current?.name || account.name;
       runtimeState.log('系统', `账号 ${displayName} 进程退出 (code=${code}, signal=${signal || 'none'})`, {
@@ -132,11 +197,11 @@ export class WorkerProcessManager implements IWorkerProcessManager {
 
     const proc = worker.process;
     worker.stopping = true;
-    (proc as any).send?.({ type: 'stop' });
+    sendToWorker(proc, { type: 'stop' });
     this.managerScheduler.setTimeoutTask(`force_kill_${accountId}`, WORKER_FORCE_KILL_DELAY_MS, () => {
       const current = workers[accountId];
       if (current && current.process === proc) {
-        (current.process as any).kill?.();
+        killWorker(current.process);
         delete workers[accountId];
       }
     });
@@ -171,16 +236,18 @@ export class WorkerProcessManager implements IWorkerProcessManager {
     const killIfStale = (): boolean => {
       const current = workers[accountId];
       if (!current || current.process !== proc) return false;
-      try { (current.process as any).kill?.(); } catch {}
+      try { killWorker(current.process); } catch {}
       delete workers[accountId];
       return true;
     };
 
-    if (typeof (proc as ChildProcess).exitCode === 'number' || (proc as ChildProcess).signalCode) {
+    // Check if process already exited
+    if (isChildProcess(proc) && (typeof proc.exitCode === 'number' || proc.signalCode)) {
       startOnce();
       return;
     }
-    proc.once?.('exit', startOnce);
+    const procInterface = proc as IWorkerProcess;
+    procInterface.once?.('exit', startOnce);
     this.stopWorker(accountId);
     this.managerScheduler.setTimeoutTask(`restart_fallback_${accountId}`, WORKER_RESTART_FALLBACK_MS, () => {
       if (started) return;
@@ -205,7 +272,7 @@ export class WorkerProcessManager implements IWorkerProcessManager {
         }
       });
 
-      (worker.process as any).send?.({ type: 'api_call', id, method, args });
+      sendToWorker(worker.process, { type: 'api_call', id, method, args });
     });
   }
 
@@ -214,8 +281,6 @@ export class WorkerProcessManager implements IWorkerProcessManager {
       const worker = new WorkerThread(this.opts.workerScriptPath, {
         workerData: { accountId: String(account.id || ''), channel: 'thread' },
       });
-      (worker as unknown as { send: (payload: unknown) => void }).send = (payload: unknown) => worker.postMessage(payload);
-      (worker as unknown as { kill: () => Promise<void> }).kill = () => worker.terminate().then(() => {});
       return worker;
     }
 
@@ -241,7 +306,7 @@ export class WorkerProcessManager implements IWorkerProcessManager {
     const { runtimeState } = this.opts;
 
     if (msg.type === 'status_sync') {
-      worker.status = runtimeState.normalizeStatusForPanel(msg.data, accountId, worker.name);
+      worker.status = runtimeState.normalizeStatusForPanel(msg.data, accountId, worker.name) as WorkerStatus;
       this.opts.onStatusSync?.(accountId, worker.status, worker.name);
 
       const statusData = msg.data as { status?: { name?: string } };
@@ -282,14 +347,19 @@ export class WorkerProcessManager implements IWorkerProcessManager {
         }
       }
     } else if (msg.type === 'log') {
-      const logEntry = {
-        ...msg.data as object,
+      const now = new Date();
+      const time = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      const data = msg.data as Record<string, unknown> | undefined;
+      const logEntry: WorkerLogEntry = {
+        time,
+        msg: String(data?.msg || ''),
+        tag: String(data?.tag || ''),
         accountId,
         accountName: worker.name,
         ts: Date.now(),
-        meta: (msg.data as { meta?: object })?.meta || {},
+        meta: (data?.meta as Record<string, unknown>) || {},
       };
-      (logEntry as { _searchText?: string })._searchText = `${(logEntry as { msg?: string }).msg || ''} ${(logEntry as { tag?: string }).tag || ''} ${JSON.stringify((logEntry as { meta?: object }).meta || {})}`.toLowerCase();
+      logEntry._searchText = `${logEntry.msg || ''} ${logEntry.tag || ''} ${JSON.stringify(logEntry.meta || {})}`.toLowerCase();
       worker.logs.push(logEntry);
       if (worker.logs.length > 1000) worker.logs.shift();
       runtimeState.globalLogs.push(logEntry as never);

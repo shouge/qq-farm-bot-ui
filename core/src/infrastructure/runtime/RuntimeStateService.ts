@@ -6,6 +6,7 @@ import type {
   RuntimeLogEntry,
   AccountLogEntry,
 } from '../../domain/ports/IRuntimeStateService';
+import type { Store, ConfigSnapshot, ConfigDelta, LogFilters, WorkerStatus, RawWorkerStatus } from './types';
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -22,31 +23,33 @@ function formatLocalDateTime24(date = new Date()): string {
   return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
 }
 
-function deepEqual(a: any, b: any): boolean {
+function deepEqual<T>(a: T, b: T): boolean {
   if (a === b) return true;
   if (a === null || b === null || typeof a !== typeof b) return false;
   if (typeof a !== 'object') return false;
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const bKeys = Object.keys(bObj);
   if (aKeys.length !== bKeys.length) return false;
   for (const key of aKeys) {
-    if (!bKeys.includes(key) || !deepEqual(a[key], b[key])) return false;
+    if (!bKeys.includes(key) || !deepEqual(aObj[key], bObj[key])) return false;
   }
   return true;
 }
 
-function deepClone(obj: any): any {
+function deepClone<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(deepClone);
-  const cloned: any = {};
-  for (const key of Object.keys(obj)) {
-    cloned[key] = deepClone(obj[key]);
+  if (Array.isArray(obj)) return obj.map(deepClone) as unknown as T;
+  const cloned: Record<string, unknown> = {};
+  for (const key of Object.keys(obj as Record<string, unknown>)) {
+    cloned[key] = deepClone((obj as Record<string, unknown>)[key]);
   }
-  return cloned;
+  return cloned as T;
 }
 
 interface RuntimeStateOptions {
-  store: any;
+  store: Store;
   operationKeys?: string[];
 }
 
@@ -58,7 +61,7 @@ export class RuntimeStateService implements IRuntimeStateService {
   runtimeEvents = new EventEmitter();
 
   private configRevision: number;
-  private lastConfigSnapshot = new Map<string, any>();
+  private lastConfigSnapshot = new Map<string, ConfigSnapshot>();
   private readonly runtimeLogger = createModuleLogger('runtime');
   private readonly defaultOpsTemplate: Record<string, number>;
   private readonly opsPool: Array<Record<string, number>> = [];
@@ -66,9 +69,9 @@ export class RuntimeStateService implements IRuntimeStateService {
   private readonly MAX_LOGS_PER_ACCOUNT = 500;
 
   private readonly operationKeys: string[];
-  private readonly store: any;
+  private readonly store: Store;
 
-  private readonly CONFIG_FIELDS = [
+  private readonly CONFIG_FIELDS: (keyof ConfigSnapshot)[] = [
     'automation',
     'plantingStrategy',
     'preferredSeedId',
@@ -95,7 +98,7 @@ export class RuntimeStateService implements IRuntimeStateService {
     return this.configRevision;
   }
 
-  buildConfigSnapshotForAccount(accountId: string): any {
+  buildConfigSnapshotForAccount(accountId: string): ConfigSnapshot {
     return {
       automation: this.store.getAutomation(accountId),
       plantingStrategy: this.store.getPlantingStrategy(accountId),
@@ -110,17 +113,18 @@ export class RuntimeStateService implements IRuntimeStateService {
     };
   }
 
-  buildConfigDeltaForAccount(accountId: string): any | null {
+  buildConfigDeltaForAccount(accountId: string): ConfigDelta | null {
     const accId = String(accountId || '').trim();
     const current = this.buildConfigSnapshotForAccount(accId);
     const last = this.lastConfigSnapshot.get(accId);
 
     if (!last) {
       this.lastConfigSnapshot.set(accId, deepClone(current));
-      return current;
+      // Return full snapshot cast to delta for initial sync
+      return { ...current, __delta: true };
     }
 
-    const delta: any = {
+    const delta: Partial<ConfigSnapshot> & { __revision: number; __delta: true } = {
       __revision: current.__revision,
       __delta: true,
     };
@@ -128,14 +132,14 @@ export class RuntimeStateService implements IRuntimeStateService {
     let hasChanges = false;
     for (const field of this.CONFIG_FIELDS) {
       if (!deepEqual(current[field], last[field])) {
-        delta[field] = current[field];
+        (delta as Record<string, unknown>)[field] = current[field];
         hasChanges = true;
       }
     }
 
     if (!hasChanges) return null;
     this.lastConfigSnapshot.set(accId, deepClone(current));
-    return delta;
+    return delta as ConfigDelta;
   }
 
   clearConfigSnapshot(accountId: string): void {
@@ -144,7 +148,7 @@ export class RuntimeStateService implements IRuntimeStateService {
     this.accountLogsMap.delete(accId);
   }
 
-  log(tag: string, msg: string, extra: any = {}): void {
+  log(tag: string, msg: string, extra: Record<string, unknown> = {}): void {
     const time = formatLocalDateTime24(new Date());
     const level = tag === '错误' ? 'error' : 'info';
     this.runtimeLogger[level](msg, { tag, ...extra });
@@ -168,22 +172,22 @@ export class RuntimeStateService implements IRuntimeStateService {
         this.accountLogsMap.set(accountId, []);
       }
       const list = this.accountLogsMap.get(accountId)!;
-      list.push(entry as any);
+      list.push(entry as unknown as AccountLogEntry);
       if (list.length > this.MAX_LOGS_PER_ACCOUNT) list.shift();
     }
 
     this.runtimeEvents.emit('log', entry);
   }
 
-  getLogsByAccount(accountId: string, filters: any = {}): RuntimeLogEntry[] {
+  getLogsByAccount(accountId: string, filters: LogFilters = {}): RuntimeLogEntry[] {
     const accId = String(accountId || '').trim();
     if (!accId) return [];
     const list = this.accountLogsMap.get(accId);
     if (!list) return [];
-    return this.filterLogs(list as any, filters);
+    return this.filterLogs(list as unknown as RuntimeLogEntry[], filters);
   }
 
-  addAccountLog(action: string, msg: string, accountId = '', accountName = '', extra: any = {}): void {
+  addAccountLog(action: string, msg: string, accountId = '', accountName = '', extra: Record<string, unknown> = {}): void {
     const entry: AccountLogEntry = {
       time: formatLocalDateTime24(new Date()),
       action,
@@ -197,8 +201,8 @@ export class RuntimeStateService implements IRuntimeStateService {
     this.runtimeEvents.emit('account_log', entry);
   }
 
-  normalizeStatusForPanel(data: any, accountId: string, accountName: string): any {
-    const src = data && typeof data === 'object' ? data : {};
+  normalizeStatusForPanel(data: unknown, accountId: string, accountName: string): Record<string, unknown> {
+    const src = data && typeof data === 'object' ? (data as RawWorkerStatus) : {};
     const srcOps = src.operations;
 
     if (srcOps && typeof srcOps === 'object') {
@@ -243,7 +247,7 @@ export class RuntimeStateService implements IRuntimeStateService {
     return { ...this.defaultOpsTemplate };
   }
 
-  buildDefaultStatus(accountId: string): any {
+  buildDefaultStatus(accountId: string): WorkerStatus {
     return {
       connection: { connected: false },
       status: { name: '', level: 0, gold: 0, exp: 0, platform: 'qq' },
@@ -264,8 +268,8 @@ export class RuntimeStateService implements IRuntimeStateService {
     };
   }
 
-  filterLogs(list: RuntimeLogEntry[], filters: any = {}): RuntimeLogEntry[] {
-    const f = filters || {};
+  filterLogs(list: RuntimeLogEntry[], filters: LogFilters = {}): RuntimeLogEntry[] {
+    const f = filters;
     const keyword = String(f.keyword || '').trim().toLowerCase();
     const keywordTerms = keyword ? keyword.split(/\s+/).filter(Boolean) : [];
     const tag = String(f.tag || '').trim();

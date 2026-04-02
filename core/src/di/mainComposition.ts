@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AdminServer } from '../interface/http/AdminServer';
 import { RuntimeEngine } from '../infrastructure/runtime/RuntimeEngine';
 import { JsonAccountRepository } from '../infrastructure/persistence/JsonAccountRepository';
+import { SocketIOEventPublisher } from '../infrastructure/event/SocketIOEventPublisher';
 import { createAuthRouter } from '../interface/http/routers/authRouter';
 import { createAdminRouter } from '../interface/http/routers/adminRouter';
 import { createAccountRouter } from '../interface/http/routers/accountRouter';
@@ -36,7 +37,7 @@ export function createBridgedRuntime(options: { mainEntryPath: string }): Bridge
 
   const workerScriptPath = require.resolve(path.join(__dirname, '../interface/worker/WorkerEntry'));
 
-  // Create RuntimeEngine first (it provides panelDataProvider but doesn't need routers yet)
+  // Create RuntimeEngine first (it provides panelDataProvider but doesn't need eventPublisher yet)
   const runtimeEngine = new RuntimeEngine({
     mainEntryPath: options.mainEntryPath,
     workerScriptPath,
@@ -54,7 +55,7 @@ export function createBridgedRuntime(options: { mainEntryPath: string }): Bridge
   const logRouter = createLogRouter(panelProvider);
   const qrRouter = createQrRouter(configRepo);
 
-  // Now create AdminServer with all dependencies resolved
+  // Create AdminServer with all dependencies resolved
   const adminServer = new AdminServer({
     authRouter,
     adminRouter,
@@ -69,12 +70,31 @@ export function createBridgedRuntime(options: { mainEntryPath: string }): Bridge
     panelDataProvider: panelProvider,
   });
 
-  // Wire up the adminServer to runtimeEngine for status/events
-  runtimeEngine.setAdminServer(adminServer);
+  // Wire up the event publisher after AdminServer is created
+  // This breaks the circular dependency: RuntimeEngine -> IEventPublisher <- AdminServer
+  runtimeEngine.setEventPublisher({
+    publish: (event: string, data: unknown) => {
+      const io = adminServer.getIO();
+      if (io) io.emit(event, data);
+    },
+    publishTo: (room: string, event: string, data: unknown) => {
+      const io = adminServer.getIO();
+      if (io) io.to(room).emit(event, data);
+    },
+    isReady: () => adminServer.getIO() !== null,
+  });
 
   return {
     async start(opts = {}) {
-      await runtimeEngine.start(opts);
+      const shouldStartAdminServer = opts.startAdminServer !== false;
+
+      if (shouldStartAdminServer) {
+        const port = CONFIG?.adminPort || 3000;
+        adminServer.start(port);
+      }
+
+      await runtimeEngine.start({ autoStartAccounts: opts.autoStartAccounts });
+
       if (process.env.NODE_ENV === 'development' || process.env.FARM_HOT_RELOAD === '1') {
         enableHotReload(true);
       }

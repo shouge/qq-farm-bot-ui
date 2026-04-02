@@ -1,6 +1,6 @@
 import process from 'node:process';
 import path from 'node:path';
-import type { AdminServer } from '../../interface/http/AdminServer';
+import type { IEventPublisher, NoOpEventPublisher } from '../../domain/ports/IEventPublisher';
 import { RuntimeStateService } from './RuntimeStateService';
 import { WorkerProcessManager } from './WorkerProcessManager';
 import { PanelDataProvider } from './PanelDataProvider';
@@ -25,7 +25,7 @@ export class RuntimeEngine {
   private workerManager: WorkerProcessManager;
   private panelDataProvider: PanelDataProvider;
   private reloginReminder: ReloginReminderService;
-  private adminServer: AdminServer | null = null;
+  private eventPublisher: IEventPublisher = { publish: () => {}, publishTo: () => {}, isReady: () => false };
 
   constructor(private readonly opts: RuntimeEngineOptions) {
     this.runtimeState = new RuntimeStateService({ store, operationKeys: OPERATION_KEYS });
@@ -63,18 +63,16 @@ export class RuntimeEngine {
       broadcastConfigToWorkers: (targetAccountId = '') => this.broadcastConfigToWorkers(targetAccountId),
       onStatusSync: (accountId, status, accountName) => {
         this.runtimeState.runtimeEvents.emit('status', { accountId, status, accountName });
-        const io = this.getIO();
-        if (!io) return;
-        io.to(`account:${accountId}`).emit('status:update', { accountId, status });
-        io.to('account:all').emit('status:update', { accountId, status });
+        if (!this.eventPublisher.isReady()) return;
+        this.eventPublisher.publishTo(`account:${accountId}`, 'status:update', { accountId, status });
+        this.eventPublisher.publishTo('account:all', 'status:update', { accountId, status });
       },
-      onWorkerLog: (entry: any, accountId, accountName) => {
+      onWorkerLog: (entry: RuntimeLogEntry, accountId, accountName) => {
         this.runtimeState.runtimeEvents.emit('worker_log', { entry, accountId, accountName });
-        const io = this.getIO();
-        if (!io) return;
+        if (!this.eventPublisher.isReady()) return;
         const id = String(entry?.accountId || accountId || '').trim();
-        if (id) io.to(`account:${id}`).emit('log:new', entry);
-        io.to('account:all').emit('log:new', entry);
+        if (id) this.eventPublisher.publishTo(`account:${id}`, 'log:new', entry);
+        this.eventPublisher.publishTo('account:all', 'log:new', entry);
       },
     });
 
@@ -88,35 +86,23 @@ export class RuntimeEngine {
       (targetAccountId = '') => this.broadcastConfigToWorkers(targetAccountId)
     );
 
-    this.runtimeState.runtimeEvents.on('log', (entry: any) => {
-      const io = this.getIO();
-      if (!io) return;
+    this.runtimeState.runtimeEvents.on('log', (entry: RuntimeLogEntry) => {
+      if (!this.eventPublisher.isReady()) return;
       const id = String(entry?.accountId || '').trim();
-      if (id) io.to(`account:${id}`).emit('log:new', entry);
-      io.to('account:all').emit('log:new', entry);
+      if (id) this.eventPublisher.publishTo(`account:${id}`, 'log:new', entry);
+      this.eventPublisher.publishTo('account:all', 'log:new', entry);
     });
 
-    this.runtimeState.runtimeEvents.on('account_log', (entry: any) => {
-      const io = this.getIO();
-      if (!io) return;
+    this.runtimeState.runtimeEvents.on('account_log', (entry: AccountLogEntry) => {
+      if (!this.eventPublisher.isReady()) return;
       const id = String(entry?.accountId || '').trim();
-      if (id) io.to(`account:${id}`).emit('account-log:new', entry);
-      io.to('account:all').emit('account-log:new', entry);
+      if (id) this.eventPublisher.publishTo(`account:${id}`, 'account-log:new', entry);
+      this.eventPublisher.publishTo('account:all', 'account-log:new', entry);
     });
   }
 
-  async start(options: { startAdminServer?: boolean; autoStartAccounts?: boolean } = {}): Promise<void> {
-    const shouldStartAdminServer = options.startAdminServer !== false;
+  async start(options: { autoStartAccounts?: boolean } = {}): Promise<void> {
     const shouldAutoStartAccounts = options.autoStartAccounts !== false;
-
-    if (shouldStartAdminServer) {
-      if (!this.adminServer) {
-        throw new Error('AdminServer not set. Call setAdminServer() before start().');
-      }
-      const { CONFIG } = require('../../config/config');
-      const port = CONFIG?.adminPort || 3000;
-      this.adminServer.start(port);
-    }
 
     if (shouldAutoStartAccounts) {
       this.startAllAccounts();
@@ -130,7 +116,7 @@ export class RuntimeEngine {
   }
 
   startAllAccounts(): void {
-    const accounts = (store.getAccounts().accounts || []) as any[];
+    const accounts = (store.getAccounts().accounts || []) as Array<{ id: string; name: string; code: string; platform: string }>;
     if (accounts.length > 0) {
       this.runtimeState.log('系统', `发现 ${accounts.length} 个账号，正在启动...`);
       accounts.forEach((acc) => this.workerManager.startWorker(acc));
@@ -146,7 +132,7 @@ export class RuntimeEngine {
       const config = this.runtimeState.buildConfigDeltaForAccount(accId);
       if (!config) continue;
       try {
-        worker.process.send({ type: 'config_sync', config });
+        (worker.process as { send?: (msg: unknown) => void }).send?.({ type: 'config_sync', config });
       } catch {
         // ignore IPC failures for exited workers
       }
@@ -165,11 +151,10 @@ export class RuntimeEngine {
     return this.workerManager;
   }
 
-  setAdminServer(adminServer: AdminServer): void {
-    this.adminServer = adminServer;
-  }
-
-  private getIO() {
-    return this.adminServer?.getIO();
+  setEventPublisher(publisher: IEventPublisher): void {
+    this.eventPublisher = publisher;
   }
 }
+
+// Import types for event handlers
+import type { RuntimeLogEntry, AccountLogEntry } from '../../domain/ports/IRuntimeStateService';

@@ -27,7 +27,18 @@ export interface OfflineReminderPayload {
 
 export interface ReloginReminderOptions {
   store: {
-    getOfflineReminder?: () => { offlineDeleteEnabled?: boolean; offlineDeleteSec?: number | string; channel?: string; endpoint?: string; token?: string; title?: string; msg?: string } | null;
+    getOfflineReminder?: () => {
+      offlineDeleteEnabled?: boolean;
+      offlineDeleteSec?: number | string;
+      channel?: string;
+      endpoint?: string;
+      token?: string;
+      title?: string;
+      msg?: string;
+      reloginUrlMode?: string;
+      custom_headers?: string;
+      custom_body?: string;
+    } | null;
     getQrLoginConfig?: () => { apiDomain?: string } | null;
     getAccounts?: () => { accounts: Array<{ id: string; name: string; code: string; platform?: string; qq?: string; uin?: string; avatar?: string }> };
     addOrUpdateAccount?: (account: { id?: string; name?: string; code?: string; platform?: string; qq?: string; uin?: string; avatar?: string }) => { accounts: Array<{ id: string; name: string }> };
@@ -184,12 +195,12 @@ export class ReloginReminderService {
       if (!cfg) return;
 
       const channel = String(cfg.channel || '').trim().toLowerCase();
-      const reloginUrlMode = String((cfg as any).reloginUrlMode || 'none').trim().toLowerCase();
+      const reloginUrlMode = String(cfg.reloginUrlMode || 'none').trim().toLowerCase();
       const endpoint = String(cfg.endpoint || '').trim();
       const token = String(cfg.token || '').trim();
       const baseTitle = String(cfg.title || '').trim();
-      const custom_headers = String((cfg as any).custom_headers || '').trim();
-      const custom_body = String((cfg as any).custom_body || '').trim();
+      const custom_headers = String(cfg.custom_headers || '').trim();
+      const custom_body = String(cfg.custom_body || '').trim();
 
       const accountName = String(payload.accountName || payload.accountId || '').trim();
       const title = accountName ? `${baseTitle} ${accountName}` : baseTitle;
