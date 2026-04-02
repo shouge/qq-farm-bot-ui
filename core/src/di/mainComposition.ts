@@ -34,30 +34,17 @@ export function createBridgedRuntime(options: { mainEntryPath: string }): Bridge
     (disabled: boolean) => store.setDisablePasswordAuth(disabled)
   );
 
-  const adminServer = new AdminServer({
-    authRouter,
-    adminRouter: null as any,
-    accountRouter: null as any,
-    farmRouter: null as any,
-    settingsRouter: null as any,
-    friendRouter: null as any,
-    inventoryRouter: null as any,
-    logRouter: null as any,
-    qrRouter: null as any,
-    authController,
-    panelDataProvider: null as any,
-  });
-
   const workerScriptPath = require.resolve(path.join(__dirname, '../interface/worker/WorkerEntry'));
 
+  // Create RuntimeEngine first (it provides panelDataProvider but doesn't need routers yet)
   const runtimeEngine = new RuntimeEngine({
-    adminServer,
     mainEntryPath: options.mainEntryPath,
     workerScriptPath,
   });
 
   const panelProvider = runtimeEngine.getPanelDataProvider();
 
+  // Create all routers that depend on panelProvider
   const adminRouter = createAdminRouter(panelProvider, configRepo, configRepo);
   const accountRouter = createAccountRouter(configRepo, panelProvider, configRepo);
   const farmRouter = createFarmRouter(panelProvider);
@@ -67,8 +54,8 @@ export function createBridgedRuntime(options: { mainEntryPath: string }): Bridge
   const logRouter = createLogRouter(panelProvider);
   const qrRouter = createQrRouter(configRepo);
 
-  // Mutate adminServer deps after construction (simpler than forward-declaring all routers)
-  (adminServer as any).deps = {
+  // Now create AdminServer with all dependencies resolved
+  const adminServer = new AdminServer({
     authRouter,
     adminRouter,
     accountRouter,
@@ -80,7 +67,10 @@ export function createBridgedRuntime(options: { mainEntryPath: string }): Bridge
     qrRouter,
     authController,
     panelDataProvider: panelProvider,
-  };
+  });
+
+  // Wire up the adminServer to runtimeEngine for status/events
+  runtimeEngine.setAdminServer(adminServer);
 
   return {
     async start(opts = {}) {

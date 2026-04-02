@@ -1,0 +1,13 @@
+// QQ Farm core constants
+export const FARM_APP_ID = '1112386029';
+export const DEFAULT_QQ_LOGIN_DOMAIN = 'q.qq.com';
+export const DEFAULT_ADMIN_PORT = 3000;
+export const MAX_GLOBAL_LOGS = 1000;
+export const MAX_WORKER_LOGS = 1000;
+export const MAX_ACCOUNT_LOGS = 300;
+export const MAX_LOGS_PER_ACCOUNT = 500;
+export const WORKER_API_TIMEOUT_MS = 10000;
+export const WORKER_FORCE_KILL_DELAY_MS = 1000;
+export const WORKER_RESTART_FALLBACK_MS = 1500;
+export const OFFLINE_REMINDER_MAX_ROUNDS = 120;
+export const RELogin_QRCode_WIDTH = 300;

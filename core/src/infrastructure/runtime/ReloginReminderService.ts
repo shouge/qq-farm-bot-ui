@@ -1,33 +1,67 @@
 import QRCode from 'qrcode';
 import { sleep } from '../../utils/utils';
 import type { IWorkerProcessManager } from '../../domain/ports/IWorkerProcessManager';
+import { FARM_APP_ID, DEFAULT_QQ_LOGIN_DOMAIN, OFFLINE_REMINDER_MAX_ROUNDS, RELogin_QRCode_WIDTH } from '../../domain/constants';
+
+export interface PushooMessageOptions {
+  channel: string;
+  endpoint?: string;
+  token?: string;
+  title: string;
+  content: string;
+  custom_headers?: string;
+  custom_body?: string;
+}
+
+export interface PushooMessageResult {
+  ok?: boolean;
+  msg?: string;
+}
+
+export interface OfflineReminderPayload {
+  accountId?: string;
+  accountName?: string;
+  reason?: string;
+  offlineMs?: number;
+}
 
 export interface ReloginReminderOptions {
-  store: any;
-  miniProgramLoginSession: typeof import('../../services/qrlogin').MiniProgramLoginSession;
-  sendPushooMessage: (options: any) => Promise<{ ok?: boolean; msg?: string } | null>;
-  log: (tag: string, msg: string, extra?: any) => void;
-  addAccountLog: (action: string, msg: string, accountId?: string, accountName?: string, extra?: any) => void;
-  getAccounts: () => { accounts: any[] };
-  addOrUpdateAccount: (account: any) => any;
-  workerManager: IWorkerProcessManager;
+  store: {
+    getOfflineReminder?: () => { offlineDeleteEnabled?: boolean; offlineDeleteSec?: number | string; channel?: string; endpoint?: string; token?: string; title?: string; msg?: string } | null;
+    getQrLoginConfig?: () => { apiDomain?: string } | null;
+    getAccounts?: () => { accounts: Array<{ id: string; name: string; code: string; platform?: string; qq?: string; uin?: string; avatar?: string }> };
+    addOrUpdateAccount?: (account: { id?: string; name?: string; code?: string; platform?: string; qq?: string; uin?: string; avatar?: string }) => { accounts: Array<{ id: string; name: string }> };
+  };
+  miniProgramLoginSession: {
+    queryStatus: (code: string, options: { apiDomain: string }) => Promise<{ status?: string; ticket?: string; uin?: string }>;
+    requestLoginCode: (options: { apiDomain: string }) => Promise<{ code?: string; url?: string; loginUrl?: string }>;
+    getAuthCode: (ticket: string, appid: string, options: { apiDomain: string }) => Promise<string>;
+  };
+  sendPushooMessage: (options: PushooMessageOptions) => Promise<PushooMessageResult | null>;
+  log: (tag: string, msg: string, extra?: Record<string, unknown>) => void;
+  addAccountLog: (action: string, msg: string, accountId?: string, accountName?: string, extra?: Record<string, unknown>) => void;
 }
 
 export class ReloginReminderService {
   private reloginWatchers = new Map<string, { startedAt: number }>();
+  private workerManager: IWorkerProcessManager | null = null;
 
   constructor(private readonly opts: ReloginReminderOptions) {}
 
+  setWorkerManager(workerManager: IWorkerProcessManager): void {
+    this.workerManager = workerManager;
+  }
+
   getOfflineAutoDeleteMs(): number {
-    const cfg = this.opts.store.getOfflineReminder ? this.opts.store.getOfflineReminder() : null;
-    if (!cfg || !cfg.offlineDeleteEnabled) return Number.POSITIVE_INFINITY;
-    const sec = Math.max(1, Number.parseInt(cfg.offlineDeleteSec, 10) || 1);
+    const cfg = this.opts.store.getOfflineReminder?.();
+    if (!cfg?.offlineDeleteEnabled) return Number.POSITIVE_INFINITY;
+    const sec = Math.max(1, Number.parseInt(String(cfg.offlineDeleteSec), 10) || 1);
     return sec * 1000;
   }
 
   private getQrLoginOptions(): { apiDomain: string } {
-    const cfg = this.opts.store.getQrLoginConfig ? this.opts.store.getQrLoginConfig() : null;
-    return { apiDomain: String((cfg && cfg.apiDomain) || 'q.qq.com').trim() || 'q.qq.com' };
+    const cfg = this.opts.store.getQrLoginConfig?.();
+    return { apiDomain: String(cfg?.apiDomain || DEFAULT_QQ_LOGIN_DOMAIN).trim() || DEFAULT_QQ_LOGIN_DOMAIN };
   }
 
   applyReloginCode({ accountId = '', accountName = '', authCode = '', uin = '' }: {
@@ -36,16 +70,21 @@ export class ReloginReminderService {
     authCode?: string;
     uin?: string;
   }): void {
+    if (!this.workerManager) {
+      this.opts.log('错误', 'WorkerManager 未设置，无法应用重登录代码', {});
+      return;
+    }
+
     const code = String(authCode || '').trim();
     if (!code) return;
 
-    const data = this.opts.getAccounts();
+    const data = this.opts.store.getAccounts?.() || { accounts: [] };
     const list = Array.isArray(data.accounts) ? data.accounts : [];
-    const found = list.find((a) => String(a.id) === String(accountId));
+    const found = list.find((a: any) => String(a.id) === String(accountId));
     const avatar = uin ? `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640` : '';
 
     if (found) {
-      this.opts.addOrUpdateAccount({
+      this.opts.store.addOrUpdateAccount?.({
         id: found.id,
         name: found.name,
         code,
@@ -54,7 +93,7 @@ export class ReloginReminderService {
         uin: uin || found.uin || found.qq || '',
         avatar: avatar || found.avatar || '',
       });
-      this.opts.workerManager.restartWorker({
+      this.workerManager.restartWorker({
         ...found,
         code,
         qq: uin || found.qq || found.uin || '',
@@ -66,7 +105,7 @@ export class ReloginReminderService {
       return;
     }
 
-    const created = this.opts.addOrUpdateAccount({
+    const created = this.opts.store.addOrUpdateAccount?.({
       name: accountName || (uin ? String(uin) : '重登录账号'),
       code,
       platform: 'qq',
@@ -74,9 +113,9 @@ export class ReloginReminderService {
       uin: uin || '',
       avatar,
     });
-    const newAcc = (created.accounts || [])[created.accounts.length - 1];
+    const newAcc = (created?.accounts || [])[(created?.accounts || []).length - 1];
     if (newAcc) {
-      this.opts.workerManager.startWorker(newAcc);
+      this.workerManager.startWorker(newAcc);
       this.opts.addAccountLog('add', `重登录成功，已新增账号: ${newAcc.name}`, newAcc.id, newAcc.name, { reason: 'relogin' });
       this.opts.log('系统', `重登录成功，已新增账号并启动: ${newAcc.name}`, { accountId: String(newAcc.id), accountName: newAcc.name });
     }
@@ -99,8 +138,7 @@ export class ReloginReminderService {
     };
 
     (async () => {
-      const maxRounds = 120;
-      for (let i = 0; i < maxRounds; i += 1) {
+      for (let i = 0; i < OFFLINE_REMINDER_MAX_ROUNDS; i += 1) {
         try {
           const status = await this.opts.miniProgramLoginSession.queryStatus(code, this.getQrLoginOptions());
           if (!status || status.status === 'Wait') {
@@ -120,7 +158,7 @@ export class ReloginReminderService {
               stop();
               return;
             }
-            const authCode = await this.opts.miniProgramLoginSession.getAuthCode(ticket, '1112386029', this.getQrLoginOptions());
+            const authCode = await this.opts.miniProgramLoginSession.getAuthCode(ticket, FARM_APP_ID, this.getQrLoginOptions());
             if (!authCode) {
               this.opts.log('错误', '重登录监听失败: 未获取到新 code');
               stop();
@@ -140,18 +178,18 @@ export class ReloginReminderService {
     })();
   }
 
-  async triggerOfflineReminder(payload: any = {}): Promise<void> {
+  async triggerOfflineReminder(payload: OfflineReminderPayload = {}): Promise<void> {
     try {
-      const cfg = this.opts.store.getOfflineReminder ? this.opts.store.getOfflineReminder() : null;
+      const cfg = this.opts.store.getOfflineReminder?.();
       if (!cfg) return;
 
       const channel = String(cfg.channel || '').trim().toLowerCase();
-      const reloginUrlMode = String(cfg.reloginUrlMode || 'none').trim().toLowerCase();
+      const reloginUrlMode = String((cfg as any).reloginUrlMode || 'none').trim().toLowerCase();
       const endpoint = String(cfg.endpoint || '').trim();
       const token = String(cfg.token || '').trim();
       const baseTitle = String(cfg.title || '').trim();
-      const custom_headers = String(cfg.custom_headers || '').trim();
-      const custom_body = String(cfg.custom_body || '').trim();
+      const custom_headers = String((cfg as any).custom_headers || '').trim();
+      const custom_body = String((cfg as any).custom_body || '').trim();
 
       const accountName = String(payload.accountName || payload.accountId || '').trim();
       const title = accountName ? `${baseTitle} ${accountName}` : baseTitle;
@@ -161,21 +199,20 @@ export class ReloginReminderService {
       if ((channel === 'webhook' || channel === 'custom_request') && !endpoint) return;
       if (channel !== 'custom_request' && !token) return;
 
-      if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_code' || reloginUrlMode === 'all') {
+      if (['qq_link', 'qr_code', 'all'].includes(reloginUrlMode)) {
         try {
           const qr = await this.opts.miniProgramLoginSession.requestLoginCode(this.getQrLoginOptions());
-          const loginCode = String((qr && qr.code) || '').trim();
-          const qqUrl = String((qr && (qr.url || qr.loginUrl)) || '').trim();
+          const loginCode = String(qr.code || '').trim();
+          const qqUrl = String(qr.url || qr.loginUrl || '').trim();
 
           if (qqUrl) {
+            const image = await QRCode.toDataURL(qqUrl, { width: RELogin_QRCode_WIDTH, margin: 1, errorCorrectionLevel: 'M' });
             if (reloginUrlMode === 'qq_link') {
               content = `${content}\n\n登录链接: ${qqUrl}`;
             } else if (reloginUrlMode === 'qr_code') {
-              const image = await QRCode.toDataURL(qqUrl, { width: 300, margin: 1, errorCorrectionLevel: 'M' });
-              content = `${content}\n\n登录二维码:\n\n<img src="${image}" alt="登录二维码" width="300" height="300" />`;
-            } else if (reloginUrlMode === 'all') {
-              const image = await QRCode.toDataURL(qqUrl, { width: 300, margin: 1, errorCorrectionLevel: 'M' });
-              content = `${content}\n\n登录链接: ${qqUrl}\n登录二维码:\n<img src="${image}" alt="登录二维码" width="300" height="300" />`;
+              content = `${content}\n\n登录二维码:\n\n<img src="${image}" alt="登录二维码" width="${RELogin_QRCode_WIDTH}" height="${RELogin_QRCode_WIDTH}" />`;
+            } else {
+              content = `${content}\n\n登录链接: ${qqUrl}\n登录二维码:\n<img src="${image}" alt="登录二维码" width="${RELogin_QRCode_WIDTH}" height="${RELogin_QRCode_WIDTH}" />`;
             }
           }
 
@@ -189,10 +226,10 @@ export class ReloginReminderService {
 
       const ret = await this.opts.sendPushooMessage({ channel, endpoint, token, title, content, custom_headers, custom_body });
 
-      if (ret && ret.ok) {
+      if (ret?.ok) {
         this.opts.log('系统', `下线提醒发送成功: ${accountName}`);
       } else {
-        this.opts.log('错误', `下线提醒发送失败: ${(ret && ret.msg) || 'unknown'}`);
+        this.opts.log('错误', `下线提醒发送失败: ${ret?.msg || 'unknown'}`);
       }
     } catch (e: any) {
       this.opts.log('错误', `下线提醒发送异常: ${e?.message || ''}`);

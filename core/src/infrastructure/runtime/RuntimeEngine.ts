@@ -15,7 +15,6 @@ const OPERATION_KEYS = [
 ];
 
 export interface RuntimeEngineOptions {
-  adminServer: AdminServer;
   runtimeMode?: string;
   mainEntryPath: string;
   workerScriptPath: string;
@@ -26,6 +25,7 @@ export class RuntimeEngine {
   private workerManager: WorkerProcessManager;
   private panelDataProvider: PanelDataProvider;
   private reloginReminder: ReloginReminderService;
+  private adminServer: AdminServer | null = null;
 
   constructor(private readonly opts: RuntimeEngineOptions) {
     this.runtimeState = new RuntimeStateService({ store, operationKeys: OPERATION_KEYS });
@@ -36,9 +36,6 @@ export class RuntimeEngine {
       sendPushooMessage,
       log: (tag, msg, extra) => this.runtimeState.log(tag, msg, extra),
       addAccountLog: (action, msg, accountId, accountName, extra) => this.runtimeState.addAccountLog(action, msg, accountId, accountName, extra),
-      getAccounts: () => store.getAccounts(),
-      addOrUpdateAccount: (account) => store.addOrUpdateAccount(account),
-      workerManager: null as any, // circular, fixed below
     });
 
     this.workerManager = new WorkerProcessManager({
@@ -66,14 +63,14 @@ export class RuntimeEngine {
       broadcastConfigToWorkers: (targetAccountId = '') => this.broadcastConfigToWorkers(targetAccountId),
       onStatusSync: (accountId, status, accountName) => {
         this.runtimeState.runtimeEvents.emit('status', { accountId, status, accountName });
-        const io = this.opts.adminServer.getIO();
+        const io = this.getIO();
         if (!io) return;
         io.to(`account:${accountId}`).emit('status:update', { accountId, status });
         io.to('account:all').emit('status:update', { accountId, status });
       },
-      onWorkerLog: (entry, accountId, accountName) => {
+      onWorkerLog: (entry: any, accountId, accountName) => {
         this.runtimeState.runtimeEvents.emit('worker_log', { entry, accountId, accountName });
-        const io = this.opts.adminServer.getIO();
+        const io = this.getIO();
         if (!io) return;
         const id = String(entry?.accountId || accountId || '').trim();
         if (id) io.to(`account:${id}`).emit('log:new', entry);
@@ -81,8 +78,8 @@ export class RuntimeEngine {
       },
     });
 
-    // Fix circular reference
-    (this.reloginReminder as any).opts.workerManager = this.workerManager;
+    // Resolve circular dependency via setter
+    this.reloginReminder.setWorkerManager(this.workerManager);
 
     this.panelDataProvider = new PanelDataProvider(
       this.workerManager,
@@ -92,7 +89,7 @@ export class RuntimeEngine {
     );
 
     this.runtimeState.runtimeEvents.on('log', (entry: any) => {
-      const io = this.opts.adminServer.getIO();
+      const io = this.getIO();
       if (!io) return;
       const id = String(entry?.accountId || '').trim();
       if (id) io.to(`account:${id}`).emit('log:new', entry);
@@ -100,7 +97,7 @@ export class RuntimeEngine {
     });
 
     this.runtimeState.runtimeEvents.on('account_log', (entry: any) => {
-      const io = this.opts.adminServer.getIO();
+      const io = this.getIO();
       if (!io) return;
       const id = String(entry?.accountId || '').trim();
       if (id) io.to(`account:${id}`).emit('account-log:new', entry);
@@ -113,9 +110,12 @@ export class RuntimeEngine {
     const shouldAutoStartAccounts = options.autoStartAccounts !== false;
 
     if (shouldStartAdminServer) {
+      if (!this.adminServer) {
+        throw new Error('AdminServer not set. Call setAdminServer() before start().');
+      }
       const { CONFIG } = require('../../config/config');
       const port = CONFIG?.adminPort || 3000;
-      this.opts.adminServer.start(port);
+      this.adminServer.start(port);
     }
 
     if (shouldAutoStartAccounts) {
@@ -163,5 +163,13 @@ export class RuntimeEngine {
 
   getWorkerManager(): WorkerProcessManager {
     return this.workerManager;
+  }
+
+  setAdminServer(adminServer: AdminServer): void {
+    this.adminServer = adminServer;
+  }
+
+  private getIO() {
+    return this.adminServer?.getIO();
   }
 }

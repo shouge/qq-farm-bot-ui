@@ -5,6 +5,12 @@ import type { IRuntimeStateService } from '../../domain/ports/IRuntimeStateServi
 import { findAccountByRef, normalizeAccountRef, resolveAccountId as resolveAccountIdByList } from '../../services/account-resolver';
 import { getSchedulerRegistrySnapshot } from '../../services/scheduler';
 
+/**
+ * PanelDataProvider implements both IPanelDataProvider and ILogRepository
+ * because log operations require account resolution (which needs store access)
+ * and runtime state access (for actual log storage).
+ * This is intentional fusion of two concerns at the infrastructure layer.
+ */
 export class PanelDataProvider implements IPanelDataProvider, ILogRepository {
   constructor(
     private readonly workerManager: IWorkerProcessManager,
