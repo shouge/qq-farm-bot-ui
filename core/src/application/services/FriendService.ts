@@ -2,7 +2,7 @@ import type { INetworkClient } from '../../domain/ports/INetworkClient';
 import type { IConfigRepository } from '../../domain/ports/IConfigRepository';
 import type { IScheduler } from '../../domain/ports/IScheduler';
 import type { ILogger } from '../../domain/ports/ILogger';
-import { ProtocolFacade } from '../../infrastructure/network/ProtocolFacade';
+import { ProtocolFacade, type SyncAllFriendsReply } from '../../infrastructure/network/ProtocolFacade';
 import { FriendOperationLimiter } from './FriendOperationLimiter';
 import { toNum, sleep } from '../../utils/utils';
 import type { FriendPreview, FriendCandidate } from '../../domain/entities';
@@ -131,8 +131,8 @@ export class FriendService {
         this.logger.info(`巡查 ${friendsToVisit.length} 人 → ${summary.join('/')}`, { module: 'friend', event: 'friend_cycle', visited: visitedCount, summary });
       }
       return summary.length > 0;
-    } catch (e: any) {
-      this.logger.warn(`巡查异常: ${e?.message || ''}`, { module: 'friend', event: 'friend_scan' });
+    } catch (e) {
+      this.logger.warn(`巡查异常: ${e instanceof Error ? e.message : String(e)}`, { module: 'friend', event: 'friend_scan' });
       return false;
     } finally {
       this.isCheckingFriends = false;
@@ -182,7 +182,7 @@ export class FriendService {
 
       await this.protocol.leaveFriendFarm(gid);
       return { acted: actions.length > 0 };
-    } catch (e: any) {
+    } catch (e) {
       await this.protocol.leaveFriendFarm(gid).catch(() => null);
       return { acted: false };
     }
@@ -251,7 +251,7 @@ export class FriendService {
     return cur >= start || cur < end;
   }
 
-  private toFriendPreview(raw: any): FriendPreview {
+  private toFriendPreview(raw: SyncAllFriendsReply['game_friends'][number]): FriendPreview {
     return {
       gid: toNum(raw.gid),
       name: String(raw.remark || raw.name || '').trim() || `GID:${toNum(raw.gid)}`,

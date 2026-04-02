@@ -1,14 +1,14 @@
 import { toNum, toTimeSec, getServerTimeSec, sleep } from '../../utils/utils';
 import type { ILogger } from '../../domain/ports/ILogger';
 import type { IScheduler } from '../../domain/ports/IScheduler';
-import type { LandEntity, PlantData, PlantPhaseInfo } from '../../domain/entities';
-import { ProtocolFacade } from '../../infrastructure/network/ProtocolFacade';
+import { LandEntity, type PlantData, type PlantPhaseInfo } from '../../domain/entities';
+import { ProtocolFacade, type AllLandsReply } from '../../infrastructure/network/ProtocolFacade';
 import type { INetworkClient } from '../../domain/ports/INetworkClient';
 import type { AutomationConfig } from '../../domain/value-objects/AutomationConfig';
+import { ItemId, LandType, FertilizerReason } from '../../domain/enums';
+import { PlantPhase } from '../../config/config';
 
-const NORMAL_FERTILIZER_ID = 1011;
-const ORGANIC_FERTILIZER_ID = 1012;
-const ALL_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'] as const;
+const ALL_FERTILIZER_LAND_TYPES = [LandType.GOLD, LandType.BLACK, LandType.RED, LandType.NORMAL] as const;
 
 interface FertilizerPlan {
   landId: number;
@@ -36,11 +36,11 @@ export class FertilizerService {
   async applyConfigFertilizer(
     plantedLands: number[],
     automation: AutomationConfig,
-    options: { reason?: string } = {}
+    options: { reason?: FertilizerReason } = {}
   ): Promise<{ normal: number; organic: number }> {
     const fertilizerConfig = automation.fertilizer || 'none';
-    const reason = String(options.reason || '').trim().toLowerCase() === 'multi_season' ? 'multi_season' : 'normal';
-    const reasonLabel = reason === 'multi_season' ? '多季补肥' : '常规施肥';
+    const reason = options.reason === FertilizerReason.MULTI_SEASON ? FertilizerReason.MULTI_SEASON : FertilizerReason.NORMAL;
+    const reasonLabel = reason === FertilizerReason.MULTI_SEASON ? '多季补肥' : '常规施肥';
     const eventName = reason === 'multi_season' ? '多季补肥' : 'fertilize';
     const selectedLandTypes = this.normalizeFertilizerLandTypes(automation.fertilizer_land_types);
     const selectedLandTypeNames = this.formatFertilizerLandTypes(selectedLandTypes);
@@ -61,7 +61,7 @@ export class FertilizerService {
     }
 
     let latestLands: LandEntity[] = [];
-    const landTypeById = new Map<number, string>();
+    const landTypeById = new Map<number, LandType>();
     try {
       const latest = await this.protocol.getAllLands();
       latestLands = (latest.lands || []).map((l) => this.toLandEntity(l));
@@ -69,8 +69,8 @@ export class FertilizerService {
         if (!land) continue;
         landTypeById.set(land.id, this.getLandTypeByLevel(land.level));
       }
-    } catch (e: any) {
-      this.logger.warn(`${reasonLabel}：获取土地信息失败: ${e?.message || ''}`, {
+    } catch (e) {
+      this.logger.warn(`${reasonLabel}：获取土地信息失败: ${e instanceof Error ? e.message : String(e)}`, {
         module: 'farm',
         event: eventName,
         result: 'error',
@@ -140,69 +140,81 @@ export class FertilizerService {
     return { normal: fertilizedNormal, organic: fertilizedOrganic };
   }
 
-  private toLandEntity(raw: any): LandEntity {
-    return {
-      id: toNum(raw.id),
-      unlocked: !!raw.unlocked,
-      level: toNum(raw.level),
-      maxLevel: toNum(raw.max_level),
-      landsLevel: toNum(raw.lands_level),
-      landSize: toNum(raw.land_size),
-      couldUnlock: !!raw.could_unlock,
-      couldUpgrade: !!raw.could_upgrade,
-      masterLandId: toNum(raw.master_land_id),
-      slaveLandIds: Array.isArray(raw.slave_land_ids) ? raw.slave_land_ids.map((id: any) => toNum(id)).filter(Boolean) : [],
-      status: String(raw.status || ''),
-      plant: raw.plant
+  private toLandEntity(raw: AllLandsReply['lands'][number]): LandEntity {
+    return new LandEntity(
+      toNum(raw.id),
+      !!raw.unlocked,
+      toNum(raw.level),
+      toNum(raw.max_level),
+      toNum(raw.lands_level),
+      toNum(raw.land_size),
+      !!raw.could_unlock,
+      !!raw.could_upgrade,
+      raw.plant
         ? {
             id: toNum(raw.plant.id),
             name: raw.plant.name,
-            phases: Array.isArray(raw.plant.phases) ? raw.plant.phases : [],
+            phases: Array.isArray(raw.plant.phases)
+              ? raw.plant.phases.map((p) => ({
+                  phase: toNum(p.phase),
+                  beginTime: toNum(p.begin_time),
+                  endTime: p.end_time ? toNum(p.end_time) : undefined,
+                  dry_time: p.dry_time ? toNum(p.dry_time) : undefined,
+                  weeds_time: p.weeds_time ? toNum(p.weeds_time) : undefined,
+                  insect_time: p.insect_time ? toNum(p.insect_time) : undefined,
+                  ferts_used: p.ferts_used
+                    ? Object.fromEntries(Object.entries(p.ferts_used).map(([k, v]) => [k, toNum(v)]))
+                    : undefined,
+                }))
+              : [],
             season: toNum(raw.plant.season),
             dry_num: toNum(raw.plant.dry_num),
-            weed_owners: Array.isArray(raw.plant.weed_owners) ? raw.plant.weed_owners.map((id: any) => toNum(id)) : [],
-            insect_owners: Array.isArray(raw.plant.insect_owners) ? raw.plant.insect_owners.map((id: any) => toNum(id)) : [],
+            weed_owners: Array.isArray(raw.plant.weed_owners) ? raw.plant.weed_owners.map((id) => toNum(id)).filter(Boolean) : [],
+            insect_owners: Array.isArray(raw.plant.insect_owners) ? raw.plant.insect_owners.map((id) => toNum(id)).filter(Boolean) : [],
             stealable: !!raw.plant.stealable,
             left_inorc_fert_times: toNum(raw.plant.left_inorc_fert_times),
-            ferts_used: raw.plant.ferts_used || {},
+            ferts_used: raw.plant.ferts_used
+              ? Object.fromEntries(Object.entries(raw.plant.ferts_used).map(([k, v]) => [k, toNum(v)]))
+              : {},
           }
         : null,
-      hasPlant: !!(raw.plant && Array.isArray(raw.plant.phases) && raw.plant.phases.length > 0),
-      isOccupiedByMaster: false,
-    } as LandEntity;
+      toNum(raw.master_land_id),
+      Array.isArray(raw.slave_land_ids) ? raw.slave_land_ids.map((id) => toNum(id)).filter(Boolean) : [],
+      String(raw.status || '')
+    );
   }
 
-  private getLandTypeByLevel(level: number): string {
-    if (level >= 4) return 'gold';
-    if (level === 3) return 'black';
-    if (level === 2) return 'red';
-    return 'normal';
+  private getLandTypeByLevel(level: number): LandType {
+    if (level >= 4) return LandType.GOLD;
+    if (level === 3) return LandType.BLACK;
+    if (level === 2) return LandType.RED;
+    return LandType.NORMAL;
   }
 
-  private normalizeFertilizerLandTypes(input?: string[]): string[] {
+  private normalizeFertilizerLandTypes(input?: string[]): LandType[] {
     const source = Array.isArray(input) ? input : [];
-    const result: string[] = [];
+    const result: LandType[] = [];
     for (const item of source) {
-      const value = String(item || '').trim().toLowerCase();
-      if (!ALL_FERTILIZER_LAND_TYPES.includes(value as typeof ALL_FERTILIZER_LAND_TYPES[number])) continue;
+      const value = String(item || '').trim().toLowerCase() as LandType;
+      if (!ALL_FERTILIZER_LAND_TYPES.includes(value)) continue;
       if (result.includes(value)) continue;
       result.push(value);
     }
     return result;
   }
 
-  private formatFertilizerLandTypes(types: string[]): string[] {
-    const labels: Record<string, string> = {
-      gold: '金土地',
-      black: '黑土地',
-      red: '红土地',
-      normal: '普通土地',
+  private formatFertilizerLandTypes(types: LandType[]): string[] {
+    const labels: Record<LandType, string> = {
+      [LandType.GOLD]: '金土地',
+      [LandType.BLACK]: '黑土地',
+      [LandType.RED]: '红土地',
+      [LandType.NORMAL]: '普通土地',
     };
     return types.map((type) => labels[type] || type);
   }
 
-  private filterLandIdsByTypes(landIds: number[], landTypeById: Map<number, string>, selectedTypes: string[]): number[] {
-    const selected = new Set(selectedTypes);
+  private filterLandIdsByTypes(landIds: number[], landTypeById: Map<number, LandType>, selectedTypes: LandType[]): number[] {
+    const selected = new Set<LandType>(selectedTypes);
     if (selected.size === 0) return [];
     if (selected.size === ALL_FERTILIZER_LAND_TYPES.length) return [...landIds];
     return landIds.filter((id) => {
@@ -218,7 +230,7 @@ export class FertilizerService {
       if (!land.plant || !land.plant.phases || land.plant.phases.length === 0) continue;
       const currentPhase = this.getCurrentPhase(land.plant.phases);
       if (!currentPhase) continue;
-      if (currentPhase.phase === 0 /* DEAD */) continue; // PlantPhase.DEAD = 0 typically, mapping based on config
+      if (currentPhase.phase === PlantPhase.UNKNOWN) continue;
 
       if (Object.prototype.hasOwnProperty.call(land.plant, 'left_inorc_fert_times')) {
         const leftTimes = toNum(land.plant.left_inorc_fert_times);
@@ -246,7 +258,7 @@ export class FertilizerService {
       const fertsUsed = phaseInfo.ferts_used;
       if (!fertsUsed || typeof fertsUsed !== 'object') continue;
       for (const [key, val] of Object.entries(fertsUsed)) {
-        if (toNum(key) === NORMAL_FERTILIZER_ID && toNum(val) > 0) return true;
+        if (toNum(key) === ItemId.NORMAL_FERTILIZER && toNum(val) > 0) return true;
       }
     }
     return false;
@@ -259,7 +271,7 @@ export class FertilizerService {
       const current = phases[i];
       if (!current) continue;
       const phase = toNum(current.phase);
-      if (phase === 0 || phase === 5 || phase === 6) continue; // UNKNOWN, MATURE, DEAD - approximate
+      if (phase === PlantPhase.UNKNOWN || phase === PlantPhase.MATURE || phase === PlantPhase.DEAD) continue;
       const beginTime = toTimeSec(current.beginTime);
       if (beginTime <= 0) continue;
 
@@ -355,8 +367,7 @@ export class FertilizerService {
 
       const currentPhase = this.getCurrentPhase(land.plant.phases);
       const currentPhaseVal = toNum(currentPhase?.phase);
-      if (currentPhaseVal === 5 || currentPhaseVal === 6 || currentPhaseVal === 0) {
-        // MATURE, DEAD, UNKNOWN
+      if (currentPhaseVal === PlantPhase.MATURE || currentPhaseVal === PlantPhase.DEAD || currentPhaseVal === PlantPhase.UNKNOWN) {
         this.pendingPlans.delete(id);
         return 0;
       }
@@ -377,7 +388,7 @@ export class FertilizerService {
         return 0;
       }
 
-      await this.protocol.fertilizeSingle(id, NORMAL_FERTILIZER_ID);
+      await this.protocol.fertilizeSingle(id, ItemId.NORMAL_FERTILIZER);
       this.pendingPlans.delete(id);
       this.logger.info(`${activePlan.reasonLabel}：土地#${id} 普通化肥已施用`, {
         module: 'farm',
@@ -388,8 +399,8 @@ export class FertilizerService {
         phase: targetWindow.phase,
       });
       return 1;
-    } catch (e: any) {
-      this.logger.warn(`普通化肥延迟施肥失败: ${e?.message || ''}`, {
+    } catch (e) {
+      this.logger.warn(`普通化肥延迟施肥失败: ${e instanceof Error ? e.message : String(e)}`, {
         module: 'farm',
         event: plan?.eventName || 'fertilize',
         result: 'error',
@@ -408,7 +419,7 @@ export class FertilizerService {
     while (true) {
       const landId = ids[idx];
       try {
-        await this.protocol.fertilizeSingle(landId, ORGANIC_FERTILIZER_ID);
+        await this.protocol.fertilizeSingle(landId, ItemId.ORGANIC_FERTILIZER);
         successCount++;
       } catch {
         break;

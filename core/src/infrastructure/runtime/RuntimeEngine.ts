@@ -1,17 +1,29 @@
 import process from 'node:process';
 import path from 'node:path';
-import type { IEventPublisher, NoOpEventPublisher } from '../../domain/ports/IEventPublisher';
+import type { IEventPublisher } from '../../domain/ports/IEventPublisher';
 import { RuntimeStateService } from './RuntimeStateService';
 import { WorkerProcessManager } from './WorkerProcessManager';
 import { PanelDataProvider } from './PanelDataProvider';
 import { ReloginReminderService } from './ReloginReminderService';
 import { MiniProgramLoginSession } from '../../services/qrlogin';
 import { sendPushooMessage } from '../../services/push';
+import { FarmOperationType } from '../../domain/enums';
 import * as store from '../../models/store';
 
 const OPERATION_KEYS = [
-  'harvest', 'water', 'weed', 'bug', 'fertilize', 'plant', 'steal',
-  'helpWater', 'helpWeed', 'helpBug', 'taskClaim', 'sell', 'upgrade',
+  FarmOperationType.HARVEST,
+  FarmOperationType.WATER,
+  FarmOperationType.WEED,
+  FarmOperationType.BUG,
+  FarmOperationType.FERTILIZE,
+  FarmOperationType.PLANT,
+  FarmOperationType.STEAL,
+  FarmOperationType.HELP_WATER,
+  FarmOperationType.HELP_WEED,
+  FarmOperationType.HELP_BUG,
+  FarmOperationType.TASK_CLAIM,
+  FarmOperationType.SELL,
+  FarmOperationType.UPGRADE,
 ];
 
 export interface RuntimeEngineOptions {
