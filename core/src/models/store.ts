@@ -15,43 +15,14 @@ import {
   ALLOWED_VALUES,
   type FriendCacheItem,
 } from '../utils/config-schema';
+import type {
+  AutomationConfig,
+} from '../domain/value-objects/AutomationConfig';
 
-/** 自动化配置 */
-export interface AutomationConfig extends Record<string, unknown> {
-  farm?: boolean;
-  farm_manage?: boolean;
-  farm_water?: boolean;
-  farm_weed?: boolean;
-  farm_bug?: boolean;
-  farm_push?: boolean;
-  land_upgrade?: boolean;
-  friend?: boolean;
-  friend_help_exp_limit?: boolean;
-  friend_steal?: boolean;
-  friend_steal_blacklist?: number[];
-  friend_help?: boolean;
-  friend_bad?: boolean;
-  task?: boolean;
-  email?: boolean;
-  fertilizer_gift?: boolean;
-  fertilizer_buy?: boolean;
-  fertilizer_buy_type?: string;
-  fertilizer_buy_max?: number;
-  fertilizer_buy_mode?: string;
-  fertilizer_buy_threshold?: number;
-  free_gifts?: boolean;
-  share_reward?: boolean;
-  vip_gift?: boolean;
-  month_card?: boolean;
-  open_server_gift?: boolean;
-  sell?: boolean;
-  fertilizer?: string;
-  fertilizer_multi_season?: boolean;
-  fertilizer_land_types?: string[];
-}
+export type { AutomationConfig };
 
 /** 间隔配置 */
-export interface IntervalsConfig extends Record<string, number> {
+export interface IntervalsConfig {
   farm: number;
   friend: number;
   farmMin: number;
@@ -370,10 +341,10 @@ export function getRuntimeClientConfig(): RuntimeClientConfig {
   const validated = validateRuntimeClientConfig(current, base as unknown as Record<string, unknown>);
   // device_info.client_version 永远由 clientVersion 派生
   return {
-    ...validated,
+    ...(validated as unknown as RuntimeClientConfig),
     device_info: {
-      ...validated.device_info,
-      client_version: validated.clientVersion,
+      ...(validated.device_info as RuntimeClientConfig['device_info']),
+      client_version: String(validated.clientVersion || ''),
     },
   };
 }
@@ -395,8 +366,8 @@ export function setRuntimeClientConfig(cfg: Partial<RuntimeClientConfig>): Runti
     device_info: BASE_CONFIG.device_info || {},
   });
   globalConfig.runtimeClient = {
-    ...validated,
-    device_info: { ...validated.device_info },
+    ...(validated as unknown as RuntimeClientConfig),
+    device_info: { ...(validated.device_info as RuntimeClientConfig['device_info']) },
   };
   saveGlobalConfig();
   return getRuntimeClientConfig();
@@ -662,16 +633,16 @@ export function getAutomation(accountId?: string | null): AutomationConfig {
 
 /** 配置快照 */
 export interface ConfigSnapshot {
-  automation: AutomationConfig;
-  plantingStrategy: string;
-  preferredSeedId: number;
-  intervals: IntervalsConfig;
-  friendBlockLevel: FriendBlockLevelConfig;
-  friendQuietHours: FriendQuietHoursConfig;
-  friendBlacklist: number[];
-  ui: UIConfig;
-  qrLogin: QrLoginConfig;
-  runtimeClient: RuntimeClientConfig;
+  automation?: Partial<AutomationConfig>;
+  plantingStrategy?: string;
+  preferredSeedId?: number;
+  intervals?: Partial<IntervalsConfig>;
+  friendBlockLevel?: Partial<FriendBlockLevelConfig>;
+  friendQuietHours?: Partial<FriendQuietHoursConfig>;
+  friendBlacklist?: number[];
+  ui?: Partial<UIConfig>;
+  qrLogin?: Partial<QrLoginConfig>;
+  runtimeClient?: Partial<RuntimeClientConfig>;
 }
 
 export function getConfigSnapshot(accountId?: string | null): ConfigSnapshot {
@@ -989,7 +960,7 @@ export function addOrUpdateAccount(acc: AddOrUpdateAccountInput): AccountsData {
       avatar: acc.avatar || acc.avatarUrl || '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    });
+    } as unknown as Account);
   }
   saveAccounts(data);
   if (touchedAccountId) {
